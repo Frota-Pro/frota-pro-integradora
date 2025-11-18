@@ -24,3 +24,4 @@ public class CargaSyncResponseProducer {
         kafkaTemplate.send(topic, event.getJobId().toString(), event);
     }
 }
+

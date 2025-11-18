@@ -12,16 +12,22 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
     consumer:
-      group-id: frota-pro-integradora-winthor
+      group-id: frota-pro-integradora-winthor-v2
       auto-offset-reset: latest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "br.com.frotasPro.integradora.winthor.dto"
+        spring.json.trusted.packages: "br.com.frotasPro.api.integracao.dto,br.com.frotasPro.integradora.winthor.dto"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: br.com.frotasPro.integradora.winthor.dto.CargaSyncRequestEvent
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8081
+
 
 frotapro:
   kafka:

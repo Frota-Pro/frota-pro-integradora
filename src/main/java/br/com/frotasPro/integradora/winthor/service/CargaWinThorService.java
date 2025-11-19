@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CargaWinThorService {
 
-    private final JdbcTemplate jdbcTemplate; // configurado com o datasource Oracle
+    private final JdbcTemplate jdbcTemplate;
 
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
@@ -29,7 +29,6 @@ public class CargaWinThorService {
         log.info("Buscando cargas faturadas no WinThor. empresaId={} dataInicial={} dataFinal={}",
                 empresaId, dataInicial, dataFinal);
 
-        // 1) Busca as cargas (MDF-e / numCar)
         String sqlCargas = """
             SELECT 
                 m.nummdfe                    AS numMdfe,
@@ -92,7 +91,6 @@ public class CargaWinThorService {
             return cargas;
         }
 
-        // 2) Busca os clientes + notas para essas cargas
         String sqlClientes = """
             SELECT 
                 m.nummdfe                    AS numMdfe,
@@ -144,7 +142,6 @@ public class CargaWinThorService {
                 (rs, rowNum) -> mapClienteRow(rs)
         );
 
-        // 3) Indexa clientes por (numMdfe, numCar)
         Map<String, List<ClienteCargaWinThorDto>> clientesPorCarga =
                 clienteRows.stream()
                         .collect(Collectors.groupingBy(
@@ -152,7 +149,6 @@ public class CargaWinThorService {
                                 Collectors.mapping(ClienteRow::toDto, Collectors.toList())
                         ));
 
-        // 4) Encaixa os clientes dentro das cargas
         cargas.forEach(c -> {
             String chave = c.getNumMdfe() + ":" + c.getNumCar();
             List<ClienteCargaWinThorDto> clientes = clientesPorCarga.getOrDefault(chave, Collections.emptyList());
@@ -162,8 +158,6 @@ public class CargaWinThorService {
 
         return cargas;
     }
-
-    // ---- mapeadores internos -------------------------------------------
 
     private CargaWinThorDto mapCarga(ResultSet rs) throws SQLException {
         Long numMdfe        = rs.getLong("numMdfe");
@@ -191,7 +185,7 @@ public class CargaWinThorService {
                 .situacaoMdfe(situacaoMdfe)
                 .destino(destino)
                 .totalClientes(totalCli)
-                .clientes(new ArrayList<>()) // será preenchido depois
+                .clientes(new ArrayList<>())
                 .build();
     }
 
@@ -213,7 +207,6 @@ public class CargaWinThorService {
         return new ClienteRow(numMdfe, numCar, codCli, nomeCli, notas);
     }
 
-    // classe interna auxiliar só para organizar o agrupamento
     private record ClienteRow(long numMdfe, int numCar, int codCli,
                               String nomeCli, List<Long> notas) {
 

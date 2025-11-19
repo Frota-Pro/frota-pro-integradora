@@ -13,7 +13,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MotoristaWinThorService {
 
-    private final JdbcTemplate jdbcTemplate; // usa o datasource Oracle
+    private final JdbcTemplate jdbcTemplate;
 
     public List<MotoristaWinThorDto> buscarMotoristas(Integer codFilial) {
 
@@ -46,7 +46,7 @@ public class MotoristaWinThorService {
                         .codigoExterno(rs.getInt("codigoExterno"))
                         .nome(rs.getString("nome"))
                         .cpf(rs.getString("cpf"))
-                        .ativo("A".equalsIgnoreCase(rs.getString("situacao"))) // ajuste conforme regra real
+                        .ativo("A".equalsIgnoreCase(rs.getString("situacao")))
                         .build()
         );
     }

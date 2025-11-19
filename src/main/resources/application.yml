@@ -9,8 +9,6 @@ spring:
     driver-class-name: oracle.jdbc.OracleDriver
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-
     consumer:
       group-id: frota-pro-integradora-winthor-v2
       auto-offset-reset: latest
@@ -19,7 +17,6 @@ spring:
       properties:
         spring.json.trusted.packages: "br.com.frotasPro.api.integracao.dto,br.com.frotasPro.integradora.winthor.dto"
         spring.json.use.type.headers: false
-        spring.json.value.default.type: br.com.frotasPro.integradora.winthor.dto.CargaSyncRequestEvent
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -34,6 +31,9 @@ frotapro:
     topics:
       carga-sync-request: frotapro.carga.sync.request
       carga-sync-response: frotapro.carga.sync.response
+      motorista-sync-request: frotapro.motorista.sync.request
+      motorista-sync-response: frotapro.motorista.sync.response
+
 
 logging:
   level:

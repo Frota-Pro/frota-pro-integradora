@@ -33,6 +33,8 @@ frotapro:
       carga-sync-response: frotapro.carga.sync.response
       motorista-sync-request: frotapro.motorista.sync.request
       motorista-sync-response: frotapro.motorista.sync.response
+      caminhao-sync-request: frotapro.caminhao.sync.request
+      caminhao-sync-response: frotapro.caminhao.sync.response
 
 
 logging:

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -38,6 +39,7 @@ public class CargaWinThorService {
                 c.numnotas                   AS numNotas,
                 MAX(n.dtsaida)               AS dtSaida,
                 c.totpeso / 1000.0           AS totalPeso,
+                SUM(n.vltotal)               AS valorTotal,
                 m.situacaomdfe               AS situacaoMdfe,
                 c.destino                    AS destino,
                 COUNT(DISTINCT p.codcli)     AS totalClientes
@@ -171,6 +173,7 @@ public class CargaWinThorService {
                 : null;
 
         Double totalPeso    = rs.getDouble("totalPeso");
+        BigDecimal valorTotal  = rs.getBigDecimal("valorTotal");
         String situacaoMdfe = rs.getString("situacaoMdfe");
         String destino      = rs.getString("destino");
         Integer totalCli    = rs.getInt("totalClientes");
@@ -182,6 +185,7 @@ public class CargaWinThorService {
                 .codVeiculo(codVeiculo)
                 .dtSaida(dtSaida)
                 .pesoTotalKg(totalPeso)
+                .valorTotal(valorTotal)
                 .situacaoMdfe(situacaoMdfe)
                 .destino(destino)
                 .totalClientes(totalCli)

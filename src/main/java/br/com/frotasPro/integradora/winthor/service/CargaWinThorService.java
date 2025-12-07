@@ -39,7 +39,14 @@ public class CargaWinThorService {
                 c.numnotas                   AS numNotas,
                 MAX(n.dtsaida)               AS dtSaida,
                 c.totpeso / 1000.0           AS totalPeso,
-                SUM(n.vltotal)               AS valorTotal,
+        
+                -- soma correta, sem duplicar pelos JOINs
+                (
+                    SELECT SUM(v.vltotal)
+                    FROM pcnfsaid v
+                    WHERE v.numcar = n.numcar
+                )                            AS valorTotal,
+        
                 m.situacaomdfe               AS situacaoMdfe,
                 c.destino                    AS destino,
                 COUNT(DISTINCT p.codcli)     AS totalClientes

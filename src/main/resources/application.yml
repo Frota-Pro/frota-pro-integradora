@@ -29,7 +29,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,logfile
       base-path: /actuator
   endpoint:
     health:
@@ -47,7 +47,5 @@ frotapro:
 
 
 logging:
-  level:
-    root: INFO
-    org.springframework.kafka: INFO
-    br.com.frotasPro.integradora.winthor: DEBUG
+  file:
+    name: logs/frotapro-integradora.log

@@ -1,0 +1,37 @@
+name: Build and Deploy Integradora
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build JAR
+        run: mvn -B clean package -DskipTests
+
+      - name: Login Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      - name: Build image
+        run: docker build -t arthenyo/frotapro-integradora:latest .
+
+      - name: Push image
+        run: docker push arthenyo/frotapro-integradora:latest
+
+      - name: Deploy locally
+        run: |
+          cd /home/frotapro/deploy/frotapro
+          docker compose pull integradora
+          docker compose up -d integradora
+          docker logs --tail=200 frotapro-integradora

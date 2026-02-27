@@ -32,6 +32,6 @@ jobs:
       - name: Deploy locally (VM)
         run: |
           cd /home/frotapro/deploy/frotapro
-          docker compose pull integradora
-          docker compose up -d integradora
-          docker logs --tail=200 frotapro-integradora
+          docker compose pull frotapro-integradora
+          docker compose up -d --no-deps --remove-orphans frotapro-integradora
+          docker compose logs --tail=200 frotapro-integradora

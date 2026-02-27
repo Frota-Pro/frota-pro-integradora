@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -16,9 +16,13 @@ public class CaminhaoWinThorService {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public List<CaminhaoWinThorDto> buscarCaminhoes(Integer codFilial) {
+    public List<CaminhaoWinThorDto> buscarCaminhoes(Integer codFilial, List<Integer> codigosCaminhoes) {
 
-        String sql = """
+        List<Integer> codigosFiltro = codigosCaminhoes == null
+                ? List.of()
+                : codigosCaminhoes.stream().filter(java.util.Objects::nonNull).distinct().toList();
+
+        StringBuilder sql = new StringBuilder("""
             SELECT
                 v.codveiculo   AS codVeiculo,
                 v.placa        AS placa,
@@ -27,9 +31,20 @@ public class CaminhaoWinThorService {
                 v.pesocargakg  AS pesoMaximoKg,
                 v.situacao     AS situacao
             FROM pcveicul v
-        """;
+            WHERE 1=1
+        """);
 
-        return jdbcTemplate.query(sql, (rs, rowNum) ->
+        List<Object> params = new ArrayList<>();
+
+        if (!codigosFiltro.isEmpty()) {
+            sql.append(" AND v.codveiculo IN (");
+            sql.append("?,".repeat(codigosFiltro.size()));
+            sql.setLength(sql.length() - 1);
+            sql.append(")");
+            params.addAll(codigosFiltro);
+        }
+
+        return jdbcTemplate.query(sql.toString(), params.toArray(), (rs, rowNum) ->
                 CaminhaoWinThorDto.builder()
                         .codVeiculo(rs.getInt("codVeiculo"))
                         .placa(rs.getString("placa"))

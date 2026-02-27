@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -20,6 +21,8 @@ public class CargaSyncRequestEvent {
 
     private LocalDate dataInicial;
     private LocalDate dataFinal;
+    private List<Integer> codigosCaminhoes;
+    private List<Integer> codigosMotoristas;
 
     private String tipoCarga;
     private String origem;

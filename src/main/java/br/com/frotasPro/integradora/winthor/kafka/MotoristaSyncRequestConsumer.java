@@ -34,8 +34,9 @@ public class MotoristaSyncRequestConsumer {
 
         // aqui, se você quiser, pode mapear empresaId -> filial WinThor
         Integer codFilial = null; // por enquanto, null = todos
+        var codigosMotoristas = event.getCodigosMotoristas();
 
-        List<MotoristaWinThorDto> motoristas = motoristaWinThorService.buscarMotoristas(codFilial);
+        List<MotoristaWinThorDto> motoristas = motoristaWinThorService.buscarMotoristas(codFilial, codigosMotoristas);
 
         MotoristaSyncResponseEvent response = MotoristaSyncResponseEvent.builder()
                 .jobId(event.getJobId())

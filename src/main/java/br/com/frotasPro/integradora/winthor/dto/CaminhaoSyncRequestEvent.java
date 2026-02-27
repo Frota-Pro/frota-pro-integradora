@@ -3,6 +3,7 @@ package br.com.frotasPro.integradora.winthor.dto;
 import lombok.*;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -16,6 +17,7 @@ public class CaminhaoSyncRequestEvent {
     private UUID empresaId;
 
     private Integer codFilial;
+    private List<Integer> codigosCaminhoes;
 
     private OffsetDateTime timestampSolicitacao;
 }

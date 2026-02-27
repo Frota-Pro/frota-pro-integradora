@@ -25,12 +25,22 @@ public class CargaWinThorService {
 
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
-                                                       LocalDate dataFinal) {
+                                                       LocalDate dataFinal,
+                                                       List<Integer> codigosCaminhoes,
+                                                       List<Integer> codigosMotoristas) {
+
+        List<Integer> codigosCaminhoesFiltro = codigosCaminhoes == null
+                ? List.of()
+                : codigosCaminhoes.stream().filter(Objects::nonNull).distinct().toList();
+
+        List<Integer> codigosMotoristasFiltro = codigosMotoristas == null
+                ? List.of()
+                : codigosMotoristas.stream().filter(Objects::nonNull).distinct().toList();
 
         log.info("Buscando cargas faturadas no WinThor. empresaId={} dataInicial={} dataFinal={}",
                 empresaId, dataInicial, dataFinal);
 
-        String sqlCargas = """
+        StringBuilder sqlCargas = new StringBuilder("""
             SELECT 
                 m.nummdfe                    AS numMdfe,
                 n.numcar                     AS numCar,
@@ -73,6 +83,16 @@ public class CargaWinThorService {
                 AND n.codveiculo   <> 0
                 AND n.codfilial    = 1
                 AND m.codfilial    = 1
+            """);
+
+        List<Object> parametrosCargas = new ArrayList<>();
+        parametrosCargas.add(java.sql.Date.valueOf(dataInicial));
+        parametrosCargas.add(java.sql.Date.valueOf(dataFinal));
+
+        adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codveiculo", codigosCaminhoesFiltro);
+        adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codmotorista", codigosMotoristasFiltro);
+
+        sqlCargas.append("""
             GROUP BY 
                 m.nummdfe,
                 n.numcar,
@@ -84,14 +104,11 @@ public class CargaWinThorService {
                 c.destino
             ORDER BY 
                 m.nummdfe
-            """;
+            """);
 
         List<CargaWinThorDto> cargas = jdbcTemplate.query(
-                sqlCargas,
-                ps -> {
-                    ps.setDate(1, java.sql.Date.valueOf(dataInicial));
-                    ps.setDate(2, java.sql.Date.valueOf(dataFinal));
-                },
+                sqlCargas.toString(),
+                parametrosCargas.toArray(),
                 (rs, rowNum) -> mapCarga(rs)
         );
 
@@ -100,7 +117,7 @@ public class CargaWinThorService {
             return cargas;
         }
 
-        String sqlClientes = """
+        StringBuilder sqlClientes = new StringBuilder("""
             SELECT 
                 m.nummdfe                    AS numMdfe,
                 n.numcar                     AS numCar,
@@ -131,6 +148,16 @@ public class CargaWinThorService {
                 AND n.codveiculo   <> 0
                 AND n.codfilial    = 1
                 AND m.codfilial    = 1
+            """);
+
+        List<Object> parametrosClientes = new ArrayList<>();
+        parametrosClientes.add(java.sql.Date.valueOf(dataInicial));
+        parametrosClientes.add(java.sql.Date.valueOf(dataFinal));
+
+        adicionarFiltroIn(sqlClientes, parametrosClientes, "m.codveiculo", codigosCaminhoesFiltro);
+        adicionarFiltroIn(sqlClientes, parametrosClientes, "m.codmotorista", codigosMotoristasFiltro);
+
+        sqlClientes.append("""
             GROUP BY 
                 m.nummdfe,
                 n.numcar,
@@ -140,14 +167,11 @@ public class CargaWinThorService {
                 m.nummdfe,
                 n.numcar,
                 nomeCli
-            """;
+            """);
 
         List<ClienteRow> clienteRows = jdbcTemplate.query(
-                sqlClientes,
-                ps -> {
-                    ps.setDate(1, java.sql.Date.valueOf(dataInicial));
-                    ps.setDate(2, java.sql.Date.valueOf(dataFinal));
-                },
+                sqlClientes.toString(),
+                parametrosClientes.toArray(),
                 (rs, rowNum) -> mapClienteRow(rs)
         );
 
@@ -166,6 +190,17 @@ public class CargaWinThorService {
         });
 
         return cargas;
+    }
+
+    private void adicionarFiltroIn(StringBuilder sql, List<Object> parametros, String coluna, List<Integer> codigos) {
+        if (codigos == null || codigos.isEmpty()) {
+            return;
+        }
+        sql.append(" AND ").append(coluna).append(" IN (");
+        sql.append("?,".repeat(codigos.size()));
+        sql.setLength(sql.length() - 1);
+        sql.append(")");
+        parametros.addAll(codigos);
     }
 
     private CargaWinThorDto mapCarga(ResultSet rs) throws SQLException {

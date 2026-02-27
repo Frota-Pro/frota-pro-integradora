@@ -33,8 +33,9 @@ public class CaminhaoSyncRequestConsumer {
                 event.getJobId(), event.getEmpresaId());
 
         Integer codFilial = event.getCodFilial();
+        var codigosCaminhoes = event.getCodigosCaminhoes();
 
-        List<CaminhaoWinThorDto> caminhoes = caminhaoWinThorService.buscarCaminhoes(codFilial);
+        List<CaminhaoWinThorDto> caminhoes = caminhaoWinThorService.buscarCaminhoes(codFilial, codigosCaminhoes);
 
         CaminhaoSyncResponseEvent response = CaminhaoSyncResponseEvent.builder()
                 .jobId(event.getJobId())

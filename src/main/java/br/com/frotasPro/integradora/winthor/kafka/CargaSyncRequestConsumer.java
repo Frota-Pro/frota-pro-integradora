@@ -30,7 +30,11 @@ public class CargaSyncRequestConsumer {
                 event.getJobId(), event.getDataInicial(), event.getDataFinal());
 
         var cargas = cargaWinThorService.buscarCargasFaturadas(
-                event.getEmpresaId(), event.getDataInicial(), event.getDataFinal()
+                event.getEmpresaId(),
+                event.getDataInicial(),
+                event.getDataFinal(),
+                event.getCodigosCaminhoes(),
+                event.getCodigosMotoristas()
         );
 
         CargaSyncResponseEvent response = CargaSyncResponseEvent.builder()
@@ -45,5 +49,4 @@ public class CargaSyncRequestConsumer {
         responseProducer.enviar(response);
     }
 }
-
 

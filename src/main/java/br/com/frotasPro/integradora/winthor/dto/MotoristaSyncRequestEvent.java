@@ -16,5 +16,6 @@ import java.util.UUID;
 public class MotoristaSyncRequestEvent {
     private UUID jobId;
     private UUID empresaId;
+    private List<Integer> codigosMotoristas;
     private OffsetDateTime timestampSolicitacao;
 }

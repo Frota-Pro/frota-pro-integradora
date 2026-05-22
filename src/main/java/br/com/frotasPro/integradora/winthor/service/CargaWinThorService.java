@@ -26,20 +26,97 @@ public class CargaWinThorService {
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
                                                        LocalDate dataFinal,
+                                                       List<Integer> codigosCargas,
                                                        List<Integer> codigosCaminhoes,
                                                        List<Integer> codigosMotoristas) {
 
-        List<Integer> codigosCaminhoesFiltro = codigosCaminhoes == null
+        List<Integer> codigosCargasFiltro = normalizarCodigos(codigosCargas);
+        List<Integer> codigosCaminhoesFiltro = normalizarCodigos(codigosCaminhoes);
+        List<Integer> codigosMotoristasFiltro = normalizarCodigos(codigosMotoristas);
+
+        log.info("Buscando cargas faturadas no WinThor. empresaId={} dataInicial={} dataFinal={} codigosCargas={}",
+                empresaId, dataInicial, dataFinal, codigosCargasFiltro);
+
+        List<CargaWinThorDto> cargasPorData = buscarCargasPorPeriodo(
+                dataInicial,
+                dataFinal,
+                codigosCaminhoesFiltro,
+                codigosMotoristasFiltro
+        );
+
+        List<CargaWinThorDto> cargasPorCodigo = codigosCargasFiltro.isEmpty()
                 ? List.of()
-                : codigosCaminhoes.stream().filter(Objects::nonNull).distinct().toList();
+                : buscarCargasPorCodigos(
+                        codigosCargasFiltro,
+                        codigosCaminhoesFiltro,
+                        codigosMotoristasFiltro
+                );
 
-        List<Integer> codigosMotoristasFiltro = codigosMotoristas == null
+        Map<Integer, CargaWinThorDto> cargasPorNumCar = new LinkedHashMap<>();
+        cargasPorData.stream()
+                .filter(carga -> carga.getNumCar() != null)
+                .forEach(carga -> cargasPorNumCar.putIfAbsent(carga.getNumCar(), carga));
+        cargasPorCodigo.stream()
+                .filter(carga -> carga.getNumCar() != null)
+                .forEach(carga -> cargasPorNumCar.putIfAbsent(carga.getNumCar(), carga));
+
+        List<CargaWinThorDto> cargas = new ArrayList<>(cargasPorNumCar.values());
+
+        if (cargas.isEmpty()) {
+            log.info("Nenhuma carga encontrada no WinThor para o período/códigos informados.");
+            return cargas;
+        }
+
+        preencherClientes(cargas);
+
+        return cargas;
+    }
+
+    private List<Integer> normalizarCodigos(List<Integer> codigos) {
+        return codigos == null
                 ? List.of()
-                : codigosMotoristas.stream().filter(Objects::nonNull).distinct().toList();
+                : codigos.stream().filter(Objects::nonNull).distinct().toList();
+    }
 
-        log.info("Buscando cargas faturadas no WinThor. empresaId={} dataInicial={} dataFinal={}",
-                empresaId, dataInicial, dataFinal);
+    private List<CargaWinThorDto> buscarCargasPorPeriodo(LocalDate dataInicial,
+                                                         LocalDate dataFinal,
+                                                         List<Integer> codigosCaminhoesFiltro,
+                                                         List<Integer> codigosMotoristasFiltro) {
+        List<Object> parametros = new ArrayList<>();
+        parametros.add(java.sql.Date.valueOf(dataInicial));
+        parametros.add(java.sql.Date.valueOf(dataFinal));
 
+        return buscarCargas(
+                "TRUNC(n.dtsaida) BETWEEN TRUNC(?) AND TRUNC(?)",
+                parametros,
+                codigosCaminhoesFiltro,
+                codigosMotoristasFiltro
+        );
+    }
+
+    private List<CargaWinThorDto> buscarCargasPorCodigos(List<Integer> codigosCargasFiltro,
+                                                         List<Integer> codigosCaminhoesFiltro,
+                                                         List<Integer> codigosMotoristasFiltro) {
+        List<Object> parametros = new ArrayList<>();
+
+        StringBuilder filtroCodigos = new StringBuilder("n.numcar IN (");
+        filtroCodigos.append("?,".repeat(codigosCargasFiltro.size()));
+        filtroCodigos.setLength(filtroCodigos.length() - 1);
+        filtroCodigos.append(")");
+        parametros.addAll(codigosCargasFiltro);
+
+        return buscarCargas(
+                filtroCodigos.toString(),
+                parametros,
+                codigosCaminhoesFiltro,
+                codigosMotoristasFiltro
+        );
+    }
+
+    private List<CargaWinThorDto> buscarCargas(String filtroPrincipal,
+                                               List<Object> parametrosCargas,
+                                               List<Integer> codigosCaminhoesFiltro,
+                                               List<Integer> codigosMotoristasFiltro) {
         StringBuilder sqlCargas = new StringBuilder("""
             SELECT 
                 m.nummdfe                    AS numMdfe,
@@ -76,7 +153,10 @@ public class CargaWinThorService {
                 JOIN pccarreg c 
                     ON n.numcar = c.numcar
             WHERE 
-                TRUNC(n.dtsaida) BETWEEN TRUNC(?) AND TRUNC(?)
+            """);
+
+        sqlCargas.append("                ").append(filtroPrincipal).append("\n");
+        sqlCargas.append("""
                 AND n.codmotorista IS NOT NULL
                 AND n.codveiculo   IS NOT NULL
                 AND n.codmotorista <> 0
@@ -84,10 +164,6 @@ public class CargaWinThorService {
                 AND n.codfilial    = 1
                 AND m.codfilial    = 1
             """);
-
-        List<Object> parametrosCargas = new ArrayList<>();
-        parametrosCargas.add(java.sql.Date.valueOf(dataInicial));
-        parametrosCargas.add(java.sql.Date.valueOf(dataFinal));
 
         adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codveiculo", codigosCaminhoesFiltro);
         adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codmotorista", codigosMotoristasFiltro);
@@ -106,16 +182,19 @@ public class CargaWinThorService {
                 m.nummdfe
             """);
 
-        List<CargaWinThorDto> cargas = jdbcTemplate.query(
+        return jdbcTemplate.query(
                 sqlCargas.toString(),
                 parametrosCargas.toArray(),
                 (rs, rowNum) -> mapCarga(rs)
         );
+    }
 
-        if (cargas.isEmpty()) {
-            log.info("Nenhuma carga encontrada no WinThor para o período.");
-            return cargas;
-        }
+    private void preencherClientes(List<CargaWinThorDto> cargas) {
+        List<Integer> codigosCargas = cargas.stream()
+                .map(CargaWinThorDto::getNumCar)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
 
         StringBuilder sqlClientes = new StringBuilder("""
             SELECT 
@@ -141,8 +220,7 @@ public class CargaWinThorService {
                 JOIN pcclient cli
                     ON cli.codcli = n.codcli
             WHERE 
-                TRUNC(n.dtsaida) BETWEEN TRUNC(?) AND TRUNC(?)
-                AND n.codmotorista IS NOT NULL
+                n.codmotorista IS NOT NULL
                 AND n.codveiculo   IS NOT NULL
                 AND n.codmotorista <> 0
                 AND n.codveiculo   <> 0
@@ -151,11 +229,7 @@ public class CargaWinThorService {
             """);
 
         List<Object> parametrosClientes = new ArrayList<>();
-        parametrosClientes.add(java.sql.Date.valueOf(dataInicial));
-        parametrosClientes.add(java.sql.Date.valueOf(dataFinal));
-
-        adicionarFiltroIn(sqlClientes, parametrosClientes, "m.codveiculo", codigosCaminhoesFiltro);
-        adicionarFiltroIn(sqlClientes, parametrosClientes, "m.codmotorista", codigosMotoristasFiltro);
+        adicionarFiltroIn(sqlClientes, parametrosClientes, "n.numcar", codigosCargas);
 
         sqlClientes.append("""
             GROUP BY 
@@ -188,8 +262,6 @@ public class CargaWinThorService {
             c.setClientes(clientes);
             c.setTotalClientes(clientes.size());
         });
-
-        return cargas;
     }
 
     private void adicionarFiltroIn(StringBuilder sql, List<Object> parametros, String coluna, List<Integer> codigos) {

@@ -26,13 +26,14 @@ public class CargaSyncRequestConsumer {
             }
     )
     public void consumir(CargaSyncRequestEvent event) {
-        log.info("📥 [INTEGRADORA] Pedido de sync recebido. jobId={} dataInicial={} dataFinal={}",
-                event.getJobId(), event.getDataInicial(), event.getDataFinal());
+        log.info("📥 [INTEGRADORA] Pedido de sync recebido. jobId={} dataInicial={} dataFinal={} codigosCargas={}",
+                event.getJobId(), event.getDataInicial(), event.getDataFinal(), event.getCodigosCargas());
 
         var cargas = cargaWinThorService.buscarCargasFaturadas(
                 event.getEmpresaId(),
                 event.getDataInicial(),
                 event.getDataFinal(),
+                event.getCodigosCargas(),
                 event.getCodigosCaminhoes(),
                 event.getCodigosMotoristas()
         );
@@ -49,4 +50,3 @@ public class CargaSyncRequestConsumer {
         responseProducer.enviar(response);
     }
 }
-

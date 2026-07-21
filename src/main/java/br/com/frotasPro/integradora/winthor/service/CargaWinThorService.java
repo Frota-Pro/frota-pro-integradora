@@ -21,6 +21,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CargaWinThorService {
 
+    // Código de situação do MDF-e confirmado no WinThor (tela 1455) como "Aprovado".
+    private static final String SITUACAO_MDFE_APROVADO = "100";
+
     private final JdbcTemplate jdbcTemplate;
 
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
@@ -53,16 +56,16 @@ public class CargaWinThorService {
                 );
 
         // Um carregamento (numCar) pode ter mais de um MDF-e emitido (ex: reemissão
-        // trocando motorista/veículo). Ficamos com o MDF-e mais recente (maior numMdfe)
-        // como fonte de motorista/veículo/peso/valor daquele carregamento, em vez do
-        // primeiro encontrado — senão o sistema nunca enxerga uma reemissão posterior.
+        // trocando motorista/veículo). Preferimos o MDF-e com situação "100 - Aprovado"
+        // como fonte de motorista/veículo/peso/valor daquele carregamento; entre MDF-e's
+        // com o mesmo status, fica com o mais recente (maior numMdfe).
         Map<Integer, CargaWinThorDto> cargasPorNumCar = new LinkedHashMap<>();
         java.util.stream.Stream.concat(cargasPorData.stream(), cargasPorCodigo.stream())
                 .filter(carga -> carga.getNumCar() != null)
                 .forEach(carga -> cargasPorNumCar.merge(
                         carga.getNumCar(),
                         carga,
-                        (existente, nova) -> nova.getNumMdfe() >= existente.getNumMdfe() ? nova : existente
+                        this::preferirMdfeVigente
                 ));
 
         List<CargaWinThorDto> cargas = new ArrayList<>(cargasPorNumCar.values());
@@ -75,6 +78,21 @@ public class CargaWinThorService {
         preencherClientes(cargas);
 
         return cargas;
+    }
+
+    private CargaWinThorDto preferirMdfeVigente(CargaWinThorDto atual, CargaWinThorDto candidato) {
+        boolean atualAprovado = isAprovado(atual);
+        boolean candidatoAprovado = isAprovado(candidato);
+
+        if (candidatoAprovado != atualAprovado) {
+            return candidatoAprovado ? candidato : atual;
+        }
+        return candidato.getNumMdfe() >= atual.getNumMdfe() ? candidato : atual;
+    }
+
+    private boolean isAprovado(CargaWinThorDto dto) {
+        return dto.getSituacaoMdfe() != null
+                && SITUACAO_MDFE_APROVADO.equals(dto.getSituacaoMdfe().trim());
     }
 
     private List<Integer> normalizarCodigos(List<Integer> codigos) {

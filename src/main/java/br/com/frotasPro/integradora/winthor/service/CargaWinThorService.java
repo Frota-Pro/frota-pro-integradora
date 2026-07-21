@@ -52,13 +52,18 @@ public class CargaWinThorService {
                         codigosMotoristasFiltro
                 );
 
+        // Um carregamento (numCar) pode ter mais de um MDF-e emitido (ex: reemissão
+        // trocando motorista/veículo). Ficamos com o MDF-e mais recente (maior numMdfe)
+        // como fonte de motorista/veículo/peso/valor daquele carregamento, em vez do
+        // primeiro encontrado — senão o sistema nunca enxerga uma reemissão posterior.
         Map<Integer, CargaWinThorDto> cargasPorNumCar = new LinkedHashMap<>();
-        cargasPorData.stream()
+        java.util.stream.Stream.concat(cargasPorData.stream(), cargasPorCodigo.stream())
                 .filter(carga -> carga.getNumCar() != null)
-                .forEach(carga -> cargasPorNumCar.putIfAbsent(carga.getNumCar(), carga));
-        cargasPorCodigo.stream()
-                .filter(carga -> carga.getNumCar() != null)
-                .forEach(carga -> cargasPorNumCar.putIfAbsent(carga.getNumCar(), carga));
+                .forEach(carga -> cargasPorNumCar.merge(
+                        carga.getNumCar(),
+                        carga,
+                        (existente, nova) -> nova.getNumMdfe() >= existente.getNumMdfe() ? nova : existente
+                ));
 
         List<CargaWinThorDto> cargas = new ArrayList<>(cargasPorNumCar.values());
 
@@ -249,16 +254,33 @@ public class CargaWinThorService {
                 (rs, rowNum) -> mapClienteRow(rs)
         );
 
-        Map<String, List<ClienteCargaWinThorDto>> clientesPorCarga =
-                clienteRows.stream()
-                        .collect(Collectors.groupingBy(
-                                ClienteRow::chave,
-                                Collectors.mapping(ClienteRow::toDto, Collectors.toList())
-                        ));
+        // Agrupa por numCar (carregamento), não por MDF-e: um carregamento com mais de
+        // um MDF-e tem clientes/notas espalhados entre eles, e todos pertencem ao mesmo
+        // carregamento. Clientes repetidos entre MDF-e's diferentes têm as notas unidas.
+        Map<Integer, Map<Integer, ClienteCargaWinThorDto>> clientesPorNumCar = new HashMap<>();
+        for (ClienteRow row : clienteRows) {
+            Map<Integer, ClienteCargaWinThorDto> clientesDoCarregamento =
+                    clientesPorNumCar.computeIfAbsent(row.numCar(), k -> new LinkedHashMap<>());
+
+            clientesDoCarregamento.merge(
+                    row.codCli(),
+                    row.toDto(),
+                    (existente, novo) -> {
+                        Set<Long> notasUnidas = new LinkedHashSet<>(existente.getNotas());
+                        notasUnidas.addAll(novo.getNotas());
+                        return ClienteCargaWinThorDto.builder()
+                                .codCli(existente.getCodCli())
+                                .nomeCli(existente.getNomeCli())
+                                .notas(new ArrayList<>(notasUnidas))
+                                .build();
+                    }
+            );
+        }
 
         cargas.forEach(c -> {
-            String chave = c.getNumMdfe() + ":" + c.getNumCar();
-            List<ClienteCargaWinThorDto> clientes = clientesPorCarga.getOrDefault(chave, Collections.emptyList());
+            List<ClienteCargaWinThorDto> clientes = new ArrayList<>(
+                    clientesPorNumCar.getOrDefault(c.getNumCar(), Map.of()).values()
+            );
             c.setClientes(clientes);
             c.setTotalClientes(clientes.size());
         });
@@ -308,7 +330,6 @@ public class CargaWinThorService {
     }
 
     private ClienteRow mapClienteRow(ResultSet rs) throws SQLException {
-        long numMdfe    = rs.getLong("numMdfe");
         int numCar      = rs.getInt("numCar");
         int codCli      = rs.getInt("codCli");
         String nomeCli  = rs.getString("nomeCli");
@@ -322,15 +343,10 @@ public class CargaWinThorService {
                 .map(Long::valueOf)
                 .collect(Collectors.toList());
 
-        return new ClienteRow(numMdfe, numCar, codCli, nomeCli, notas);
+        return new ClienteRow(numCar, codCli, nomeCli, notas);
     }
 
-    private record ClienteRow(long numMdfe, int numCar, int codCli,
-                              String nomeCli, List<Long> notas) {
-
-        String chave() {
-            return numMdfe + ":" + numCar;
-        }
+    private record ClienteRow(int numCar, int codCli, String nomeCli, List<Long> notas) {
 
         ClienteCargaWinThorDto toDto() {
             return ClienteCargaWinThorDto.builder()

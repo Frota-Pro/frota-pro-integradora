@@ -45,6 +45,28 @@ frotapro:
       caminhao-sync-request: frotapro.caminhao.sync.request
       caminhao-sync-response: frotapro.caminhao.sync.response
 
+# Pool separado e pequeno pra busca sob demanda de nota fiscal/DANFE.
+# Sem usuário dedicado ainda, cai nas mesmas credenciais do pool principal.
+winthor:
+  interativo:
+    url: ${ORACLE_INTERATIVO_URL:${ORACLE_URL}}
+    username: ${ORACLE_INTERATIVO_USERNAME:${ORACLE_USERNAME}}
+    password: ${ORACLE_INTERATIVO_PASSWORD:${ORACLE_PASSWORD}}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      winthorInterativo:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 2
+  bulkhead:
+    instances:
+      winthorInterativo:
+        max-concurrent-calls: 5
+        max-wait-duration: 2s
 
 logging:
   file:

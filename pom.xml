@@ -93,6 +93,26 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+
+		<!-- AOP necessário pras anotações do Resilience4j (circuit breaker/bulkhead) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aop</artifactId>
+		</dependency>
+
+		<!-- Resilience4j: protege o banco do WinThor de sobrecarga/instabilidade -->
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-spring-boot3</artifactId>
+			<version>2.2.0</version>
+		</dependency>
+
+		<!-- Geração de DANFE (PDF) a partir do XML já autorizado da NF-e -->
+		<dependency>
+			<groupId>br.com.swconsultoria</groupId>
+			<artifactId>java-danfe</artifactId>
+			<version>1.8</version>
+		</dependency>
     </dependencies>
 
     <build>

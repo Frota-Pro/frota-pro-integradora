@@ -6,6 +6,13 @@ FROM eclipse-temurin:21-jdk-alpine
 # fonts are installed and registered in fontconfig.
 RUN apk add --no-cache msttcorefonts-installer     && update-ms-fonts     && fc-cache -f
 
+# Fixa o fuso horário do container/JVM em America/Recife (mesmo motivo do
+# Dockerfile da frota-pro-api: evita que datas calculadas com "agora" no
+# container fiquem um dia à frente do horário do Brasil).
+RUN apk add --no-cache tzdata
+ENV TZ=America/Recife
+ENV JAVA_TOOL_OPTIONS="-Duser.timezone=America/Recife"
+
 WORKDIR /app
 COPY target/*.jar app.jar
 EXPOSE 8081

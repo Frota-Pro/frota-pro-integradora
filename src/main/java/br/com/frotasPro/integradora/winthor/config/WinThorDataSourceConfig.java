@@ -4,8 +4,6 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.jdbc.DataSourceBuilder;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -34,9 +32,19 @@ public class WinThorDataSourceConfig {
 
     @Primary
     @Bean(name = "winThorDataSource")
-    @ConfigurationProperties(prefix = "spring.datasource")
-    public DataSource winThorDataSource() {
-        return DataSourceBuilder.create().build();
+    public DataSource winThorDataSource(
+            @Value("${spring.datasource.url}") String url,
+            @Value("${spring.datasource.username}") String username,
+            @Value("${spring.datasource.password}") String password,
+            @Value("${spring.datasource.driver-class-name}") String driverClassName
+    ) {
+        HikariConfig config = new HikariConfig();
+        config.setPoolName("winthor-principal");
+        config.setJdbcUrl(url);
+        config.setUsername(username);
+        config.setPassword(password);
+        config.setDriverClassName(driverClassName);
+        return new HikariDataSource(config);
     }
 
     @Primary

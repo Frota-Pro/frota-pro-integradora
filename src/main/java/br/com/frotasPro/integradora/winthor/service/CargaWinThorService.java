@@ -220,29 +220,32 @@ public class CargaWinThorService {
                 .toList();
 
         StringBuilder sqlClientes = new StringBuilder("""
-            SELECT 
+            SELECT
                 m.nummdfe                    AS numMdfe,
                 n.numcar                     AS numCar,
                 n.codcli                     AS codCli,
                 cli.cliente                  AS nomeCli,
-                LISTAGG(DISTINCT n.numnota, ',') 
+                cid.nomecidade                AS cidade,
+                LISTAGG(DISTINCT n.numnota, ',')
                     WITHIN GROUP (ORDER BY n.numnota) AS notas
-            FROM 
+            FROM
                 pcnfsaid n
-                JOIN pcmanifestoeletronicoi i 
+                JOIN pcmanifestoeletronicoi i
                     ON n.numnota = i.numnota
-                JOIN pcmanifestoeletronicoc m 
+                JOIN pcmanifestoeletronicoc m
                     ON i.nummdfe = m.nummdfe
-                JOIN pcveicul v 
+                JOIN pcveicul v
                     ON m.codveiculo = v.codveiculo
-                JOIN pcempr e 
-                    ON m.codmotorista = e.matricula 
+                JOIN pcempr e
+                    ON m.codmotorista = e.matricula
                    AND e.tipo = 'M'
-                JOIN pccarreg c 
+                JOIN pccarreg c
                     ON n.numcar = c.numcar
                 JOIN pcclient cli
                     ON cli.codcli = n.codcli
-            WHERE 
+                LEFT JOIN pccidade cid
+                    ON cid.codcidade = cli.codcidade
+            WHERE
                 n.codmotorista IS NOT NULL
                 AND n.codveiculo   IS NOT NULL
                 AND n.codmotorista <> 0
@@ -255,12 +258,13 @@ public class CargaWinThorService {
         adicionarFiltroIn(sqlClientes, parametrosClientes, "n.numcar", codigosCargas);
 
         sqlClientes.append("""
-            GROUP BY 
+            GROUP BY
                 m.nummdfe,
                 n.numcar,
                 n.codcli,
-                cli.cliente
-            ORDER BY 
+                cli.cliente,
+                cid.nomecidade
+            ORDER BY
                 m.nummdfe,
                 n.numcar,
                 nomeCli
@@ -289,6 +293,7 @@ public class CargaWinThorService {
                         return ClienteCargaWinThorDto.builder()
                                 .codCli(existente.getCodCli())
                                 .nomeCli(existente.getNomeCli())
+                                .cidade(existente.getCidade() != null ? existente.getCidade() : novo.getCidade())
                                 .notas(new ArrayList<>(notasUnidas))
                                 .build();
                     }
@@ -351,6 +356,7 @@ public class CargaWinThorService {
         int numCar      = rs.getInt("numCar");
         int codCli      = rs.getInt("codCli");
         String nomeCli  = rs.getString("nomeCli");
+        String cidade   = rs.getString("cidade");
         String notasStr = rs.getString("notas");
 
         List<Long> notas = notasStr == null || notasStr.isBlank()
@@ -361,15 +367,16 @@ public class CargaWinThorService {
                 .map(Long::valueOf)
                 .collect(Collectors.toList());
 
-        return new ClienteRow(numCar, codCli, nomeCli, notas);
+        return new ClienteRow(numCar, codCli, nomeCli, cidade, notas);
     }
 
-    private record ClienteRow(int numCar, int codCli, String nomeCli, List<Long> notas) {
+    private record ClienteRow(int numCar, int codCli, String nomeCli, String cidade, List<Long> notas) {
 
         ClienteCargaWinThorDto toDto() {
             return ClienteCargaWinThorDto.builder()
                     .codCli(codCli)
                     .nomeCli(nomeCli)
+                    .cidade(cidade)
                     .notas(notas)
                     .build();
         }

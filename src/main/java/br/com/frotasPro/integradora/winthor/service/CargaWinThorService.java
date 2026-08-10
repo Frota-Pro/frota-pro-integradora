@@ -76,8 +76,77 @@ public class CargaWinThorService {
         }
 
         preencherClientes(cargas);
+        preencherDevolucaoETransferencia(cargas);
 
         return cargas;
+    }
+
+    /**
+     * Resumo (não o detalhe) de devolução/transferência por carregamento —
+     * usado pela frota-pro-api só pra decidir se uma diminuição de peso/valor
+     * tem motivo reconhecido, e pra mostrar o badge na tela. O detalhe
+     * produto-a-produto/nota-a-nota é buscado sob demanda, ver
+     * DevolucaoTransferenciaController.
+     */
+    private void preencherDevolucaoETransferencia(List<CargaWinThorDto> cargas) {
+        List<Integer> codigosCargas = cargas.stream()
+                .map(CargaWinThorDto::getNumCar)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
+        Set<Integer> comTransferencia = buscarNumCarComTransferenciaPerdida(codigosCargas);
+
+        cargas.forEach(c -> {
+            c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));
+            c.setTemTransferencia(comTransferencia.contains(c.getNumCar()));
+        });
+    }
+
+    private Map<Integer, List<String>> buscarCodigosDevolucaoPorNumCar(List<Integer> codigosCargas) {
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT
+                n.numcar     AS numCar,
+                d.coddevol   AS codDevol
+            FROM
+                pcnfsaid n
+                JOIN view_devol_resumo_faturamento d
+                    ON d.numnota = n.numnota
+            WHERE
+                d.coddevol IS NOT NULL
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "n.numcar", codigosCargas);
+
+        return jdbcTemplate.query(sql.toString(), parametros.toArray(), rs -> {
+            Map<Integer, List<String>> resultado = new HashMap<>();
+            while (rs.next()) {
+                int numCar = rs.getInt("numCar");
+                String codDevol = String.valueOf(rs.getInt("codDevol"));
+                resultado.computeIfAbsent(numCar, k -> new ArrayList<>()).add(codDevol);
+            }
+            return resultado;
+        });
+    }
+
+    private Set<Integer> buscarNumCarComTransferenciaPerdida(List<Integer> codigosCargas) {
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT numcaranterior AS numCar
+            FROM pclogtransfnfcarreg
+            WHERE numcaranterior IS NOT NULL
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "numcaranterior", codigosCargas);
+
+        List<Integer> numCars = jdbcTemplate.query(
+                sql.toString(),
+                parametros.toArray(),
+                (rs, rowNum) -> rs.getInt("numCar")
+        );
+        return new HashSet<>(numCars);
     }
 
     private CargaWinThorDto preferirMdfeVigente(CargaWinThorDto atual, CargaWinThorDto candidato) {

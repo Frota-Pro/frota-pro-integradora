@@ -76,6 +76,7 @@ public class CargaWinThorService {
         }
 
         preencherClientes(cargas);
+        preencherMotivosAlteracao(cargas);
 
         return cargas;
     }
@@ -309,6 +310,93 @@ public class CargaWinThorService {
             c.setClientes(clientes);
             c.setTotalClientes(clientes.size());
         });
+    }
+
+    /**
+     * Preenche, pra cada carregamento, os códigos de devolução (view_devol_resumo_faturamento,
+     * via pcnfsaid.numtransvenda) e se houve transferência de pedido pra outro carregamento
+     * (PCLOGTRANSFNFCARREG.numcaranterior). Usado pelo gate de peso/valor em
+     * ParametroSistema.validarMotivoAlteracaoPesoValorCarga, na API.
+     */
+    private void preencherMotivosAlteracao(List<CargaWinThorDto> cargas) {
+        List<Integer> codigosCargas = cargas.stream()
+                .map(CargaWinThorDto::getNumCar)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
+        Set<Integer> numCarsComTransferencia = buscarNumCarsComTransferencia(codigosCargas);
+
+        cargas.forEach(c -> {
+            c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));
+            c.setTemTransferencia(numCarsComTransferencia.contains(c.getNumCar()));
+        });
+    }
+
+    private Map<Integer, List<String>> buscarCodigosDevolucaoPorNumCar(List<Integer> codigosCargas) {
+        if (codigosCargas.isEmpty()) {
+            return Map.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT
+                n.numcar               AS numCar,
+                d.coddevol             AS codDevol
+            FROM
+                pcnfsaid n
+                JOIN view_devol_resumo_faturamento d
+                    ON d.numtransvenda = n.numtransvenda
+            WHERE
+                d.coddevol IS NOT NULL
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "n.numcar", codigosCargas);
+
+        List<DevolucaoRow> rows = jdbcTemplate.query(
+                sql.toString(),
+                parametros.toArray(),
+                (rs, rowNum) -> new DevolucaoRow(rs.getInt("numCar"), rs.getString("codDevol"))
+        );
+
+        Map<Integer, Set<String>> agrupado = new LinkedHashMap<>();
+        for (DevolucaoRow row : rows) {
+            agrupado.computeIfAbsent(row.numCar(), k -> new LinkedHashSet<>()).add(row.codDevol().trim());
+        }
+
+        Map<Integer, List<String>> resultado = new HashMap<>();
+        agrupado.forEach((numCar, codigos) -> resultado.put(numCar, new ArrayList<>(codigos)));
+        return resultado;
+    }
+
+    private Set<Integer> buscarNumCarsComTransferencia(List<Integer> codigosCargas) {
+        if (codigosCargas.isEmpty()) {
+            return Set.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT
+                t.numcaranterior AS numCarAnterior
+            FROM
+                pclogtransfnfcarreg t
+            WHERE
+                1 = 1
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "t.numcaranterior", codigosCargas);
+
+        List<Integer> numCars = jdbcTemplate.query(
+                sql.toString(),
+                parametros.toArray(),
+                (rs, rowNum) -> rs.getInt("numCarAnterior")
+        );
+
+        return new HashSet<>(numCars);
+    }
+
+    private record DevolucaoRow(int numCar, String codDevol) {
     }
 
     private void adicionarFiltroIn(StringBuilder sql, List<Object> parametros, String coluna, List<Integer> codigos) {

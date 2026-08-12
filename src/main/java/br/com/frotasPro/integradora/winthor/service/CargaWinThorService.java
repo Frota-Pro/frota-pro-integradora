@@ -96,6 +96,33 @@ public class CargaWinThorService {
                 && SITUACAO_MDFE_APROVADO.equals(dto.getSituacaoMdfe().trim());
     }
 
+    /**
+     * Dado um lote de numcar já sincronizados antes, diz quais deles AINDA
+     * existem no WinThor (têm nota fiscal vinculada) — usado pra detectar
+     * carregamento que foi apagado/desvinculado no WinThor depois de já ter
+     * sido sincronizado pro FrotaPRO (ex.: pedido cancelado, minuta refeita).
+     * Não usa os mesmos filtros de codmotorista/codveiculo != 0 da consulta
+     * principal — aqui o que importa é só "esse numcar ainda existe de
+     * alguma forma", não se está pronto pra ser (re)sincronizado.
+     */
+    public List<Integer> filtrarExistentes(List<Integer> codigosCargas) {
+        List<Integer> codigos = normalizarCodigos(codigosCargas);
+        if (codigos.isEmpty()) {
+            return List.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT n.numcar AS numcar
+            FROM pcnfsaid n
+            WHERE n.codfilial = 1
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "n.numcar", codigos);
+
+        return jdbcTemplate.query(sql.toString(), parametros.toArray(), (rs, rowNum) -> rs.getInt("numcar"));
+    }
+
     private List<Integer> normalizarCodigos(List<Integer> codigos) {
         return codigos == null
                 ? List.of()

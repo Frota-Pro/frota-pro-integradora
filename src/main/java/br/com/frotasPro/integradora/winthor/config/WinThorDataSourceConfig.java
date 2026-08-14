@@ -30,20 +30,25 @@ import javax.sql.DataSource;
 @Configuration
 public class WinThorDataSourceConfig {
 
+    // Antes usava DataSourceBuilder.create().build() + @ConfigurationProperties
+    // (prefix = "spring.datasource"), mas esse caminho não traduz a
+    // propriedade "url" pro setJdbcUrl() do Hikari nesse cenário — o pool
+    // subia sem jdbcUrl definido e falhava com "jdbcUrl is required with
+    // driverClassName". Monta manualmente, igual o pool interativo já fazia
+    // (que sempre funcionou), pra garantir que o setJdbcUrl é chamado de fato.
     @Primary
     @Bean(name = "winThorDataSource")
     public DataSource winThorDataSource(
             @Value("${spring.datasource.url}") String url,
             @Value("${spring.datasource.username}") String username,
-            @Value("${spring.datasource.password}") String password,
-            @Value("${spring.datasource.driver-class-name}") String driverClassName
+            @Value("${spring.datasource.password}") String password
     ) {
         HikariConfig config = new HikariConfig();
         config.setPoolName("winthor-principal");
         config.setJdbcUrl(url);
         config.setUsername(username);
         config.setPassword(password);
-        config.setDriverClassName(driverClassName);
+        config.setDriverClassName("oracle.jdbc.OracleDriver");
         return new HikariDataSource(config);
     }
 

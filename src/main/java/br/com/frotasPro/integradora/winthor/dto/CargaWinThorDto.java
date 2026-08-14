@@ -33,13 +33,13 @@ public class CargaWinThorDto {
 
     /**
      * Códigos de devolução (CODDEVOL, da view_devol_resumo_faturamento) encontrados
-     * pra notas desse carregamento. Vazio = nenhuma devolução associada.
+     * pra notas desse carregamento, sem duplicar. Vazio = nenhuma devolução associada.
      */
     private List<String> codigosDevolucao;
 
     /**
-     * true se esse carregamento perdeu pedido(s) transferido(s) pra outro
-     * carregamento (pclogtransfnfcarreg.numcaranterior = numCar).
+     * true se esse carregamento aparece como NUMCARANTERIOR em PCLOGTRANSFNFCARREG,
+     * ou seja, perdeu pedido(s) transferido(s) pra outro carregamento.
      */
     private Boolean temTransferencia;
 }

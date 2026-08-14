@@ -9,9 +9,9 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * Um item devolvido (uma linha de produto) de uma nota fiscal de um
- * carregamento — mesmo shape do DevolucaoResponse da frota-pro-api (o nome
- * dos campos precisa bater, é desserializado por JSON puro via RestTemplate).
+ * Um item devolvido (uma linha de produto) de uma nota fiscal desta carga,
+ * vindo de view_devol_resumo_faturamento. Uma mesma devolução (mesmo
+ * numNota) pode ter várias linhas — uma por produto devolvido.
  */
 @Data
 @Builder
@@ -23,6 +23,8 @@ public class DevolucaoWinThorDto {
     private Long numNota;
     private Long numPedido;
     private OffsetDateTime dtEntrada;
+
+    /** Motivo cadastrado no WinThor pra essa devolução (ex.: "LOGISTICA - PROX VENC(SABENDO)"). */
     private String motivo;
 
     private Integer codCliente;

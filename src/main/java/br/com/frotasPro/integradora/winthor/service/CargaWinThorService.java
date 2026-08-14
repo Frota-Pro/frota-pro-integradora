@@ -76,77 +76,9 @@ public class CargaWinThorService {
         }
 
         preencherClientes(cargas);
-        preencherDevolucaoETransferencia(cargas);
+        preencherMotivosAlteracao(cargas);
 
         return cargas;
-    }
-
-    /**
-     * Resumo (não o detalhe) de devolução/transferência por carregamento —
-     * usado pela frota-pro-api só pra decidir se uma diminuição de peso/valor
-     * tem motivo reconhecido, e pra mostrar o badge na tela. O detalhe
-     * produto-a-produto/nota-a-nota é buscado sob demanda, ver
-     * DevolucaoTransferenciaController.
-     */
-    private void preencherDevolucaoETransferencia(List<CargaWinThorDto> cargas) {
-        List<Integer> codigosCargas = cargas.stream()
-                .map(CargaWinThorDto::getNumCar)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-
-        Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
-        Set<Integer> comTransferencia = buscarNumCarComTransferenciaPerdida(codigosCargas);
-
-        cargas.forEach(c -> {
-            c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));
-            c.setTemTransferencia(comTransferencia.contains(c.getNumCar()));
-        });
-    }
-
-    private Map<Integer, List<String>> buscarCodigosDevolucaoPorNumCar(List<Integer> codigosCargas) {
-        StringBuilder sql = new StringBuilder("""
-            SELECT DISTINCT
-                n.numcar     AS numCar,
-                d.coddevol   AS codDevol
-            FROM
-                pcnfsaid n
-                JOIN view_devol_resumo_faturamento d
-                    ON d.numnota = n.numnota
-            WHERE
-                d.coddevol IS NOT NULL
-            """);
-
-        List<Object> parametros = new ArrayList<>();
-        adicionarFiltroIn(sql, parametros, "n.numcar", codigosCargas);
-
-        return jdbcTemplate.query(sql.toString(), parametros.toArray(), rs -> {
-            Map<Integer, List<String>> resultado = new HashMap<>();
-            while (rs.next()) {
-                int numCar = rs.getInt("numCar");
-                String codDevol = String.valueOf(rs.getInt("codDevol"));
-                resultado.computeIfAbsent(numCar, k -> new ArrayList<>()).add(codDevol);
-            }
-            return resultado;
-        });
-    }
-
-    private Set<Integer> buscarNumCarComTransferenciaPerdida(List<Integer> codigosCargas) {
-        StringBuilder sql = new StringBuilder("""
-            SELECT DISTINCT numcaranterior AS numCar
-            FROM pclogtransfnfcarreg
-            WHERE numcaranterior IS NOT NULL
-            """);
-
-        List<Object> parametros = new ArrayList<>();
-        adicionarFiltroIn(sql, parametros, "numcaranterior", codigosCargas);
-
-        List<Integer> numCars = jdbcTemplate.query(
-                sql.toString(),
-                parametros.toArray(),
-                (rs, rowNum) -> rs.getInt("numCar")
-        );
-        return new HashSet<>(numCars);
     }
 
     private CargaWinThorDto preferirMdfeVigente(CargaWinThorDto atual, CargaWinThorDto candidato) {
@@ -162,6 +94,33 @@ public class CargaWinThorService {
     private boolean isAprovado(CargaWinThorDto dto) {
         return dto.getSituacaoMdfe() != null
                 && SITUACAO_MDFE_APROVADO.equals(dto.getSituacaoMdfe().trim());
+    }
+
+    /**
+     * Dado um lote de numcar já sincronizados antes, diz quais deles AINDA
+     * existem no WinThor (têm nota fiscal vinculada) — usado pra detectar
+     * carregamento que foi apagado/desvinculado no WinThor depois de já ter
+     * sido sincronizado pro FrotaPRO (ex.: pedido cancelado, minuta refeita).
+     * Não usa os mesmos filtros de codmotorista/codveiculo != 0 da consulta
+     * principal — aqui o que importa é só "esse numcar ainda existe de
+     * alguma forma", não se está pronto pra ser (re)sincronizado.
+     */
+    public List<Integer> filtrarExistentes(List<Integer> codigosCargas) {
+        List<Integer> codigos = normalizarCodigos(codigosCargas);
+        if (codigos.isEmpty()) {
+            return List.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT n.numcar AS numcar
+            FROM pcnfsaid n
+            WHERE n.codfilial = 1
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "n.numcar", codigos);
+
+        return jdbcTemplate.query(sql.toString(), parametros.toArray(), (rs, rowNum) -> rs.getInt("numcar"));
     }
 
     private List<Integer> normalizarCodigos(List<Integer> codigos) {
@@ -294,7 +253,7 @@ public class CargaWinThorService {
                 n.numcar                     AS numCar,
                 n.codcli                     AS codCli,
                 cli.cliente                  AS nomeCli,
-                cid.nomecidade                AS cidade,
+                pca.praca                    AS cidade,
                 LISTAGG(DISTINCT n.numnota, ',')
                     WITHIN GROUP (ORDER BY n.numnota) AS notas
             FROM
@@ -312,8 +271,8 @@ public class CargaWinThorService {
                     ON n.numcar = c.numcar
                 JOIN pcclient cli
                     ON cli.codcli = n.codcli
-                LEFT JOIN pccidade cid
-                    ON cid.codcidade = cli.codcidade
+                LEFT JOIN pcpraca pca
+                    ON pca.codpraca = cli.codpraca
             WHERE
                 n.codmotorista IS NOT NULL
                 AND n.codveiculo   IS NOT NULL
@@ -332,7 +291,7 @@ public class CargaWinThorService {
                 n.numcar,
                 n.codcli,
                 cli.cliente,
-                cid.nomecidade
+                pca.praca
             ORDER BY
                 m.nummdfe,
                 n.numcar,
@@ -362,6 +321,8 @@ public class CargaWinThorService {
                         return ClienteCargaWinThorDto.builder()
                                 .codCli(existente.getCodCli())
                                 .nomeCli(existente.getNomeCli())
+                                // cidade deveria ser sempre a mesma pro mesmo cliente; se por
+                                // algum motivo vier diferente entre MDF-e's, fica com a primeira não-nula.
                                 .cidade(existente.getCidade() != null ? existente.getCidade() : novo.getCidade())
                                 .notas(new ArrayList<>(notasUnidas))
                                 .build();
@@ -376,6 +337,93 @@ public class CargaWinThorService {
             c.setClientes(clientes);
             c.setTotalClientes(clientes.size());
         });
+    }
+
+    /**
+     * Preenche, pra cada carregamento, os códigos de devolução (view_devol_resumo_faturamento,
+     * via pcnfsaid.numtransvenda) e se houve transferência de pedido pra outro carregamento
+     * (PCLOGTRANSFNFCARREG.numcaranterior). Usado pelo gate de peso/valor em
+     * ParametroSistema.validarMotivoAlteracaoPesoValorCarga, na API.
+     */
+    private void preencherMotivosAlteracao(List<CargaWinThorDto> cargas) {
+        List<Integer> codigosCargas = cargas.stream()
+                .map(CargaWinThorDto::getNumCar)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
+        Set<Integer> numCarsComTransferencia = buscarNumCarsComTransferencia(codigosCargas);
+
+        cargas.forEach(c -> {
+            c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));
+            c.setTemTransferencia(numCarsComTransferencia.contains(c.getNumCar()));
+        });
+    }
+
+    private Map<Integer, List<String>> buscarCodigosDevolucaoPorNumCar(List<Integer> codigosCargas) {
+        if (codigosCargas.isEmpty()) {
+            return Map.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT
+                n.numcar               AS numCar,
+                d.coddevol             AS codDevol
+            FROM
+                pcnfsaid n
+                JOIN view_devol_resumo_faturamento d
+                    ON d.numtransvenda = n.numtransvenda
+            WHERE
+                d.coddevol IS NOT NULL
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "n.numcar", codigosCargas);
+
+        List<DevolucaoRow> rows = jdbcTemplate.query(
+                sql.toString(),
+                parametros.toArray(),
+                (rs, rowNum) -> new DevolucaoRow(rs.getInt("numCar"), rs.getString("codDevol"))
+        );
+
+        Map<Integer, Set<String>> agrupado = new LinkedHashMap<>();
+        for (DevolucaoRow row : rows) {
+            agrupado.computeIfAbsent(row.numCar(), k -> new LinkedHashSet<>()).add(row.codDevol().trim());
+        }
+
+        Map<Integer, List<String>> resultado = new HashMap<>();
+        agrupado.forEach((numCar, codigos) -> resultado.put(numCar, new ArrayList<>(codigos)));
+        return resultado;
+    }
+
+    private Set<Integer> buscarNumCarsComTransferencia(List<Integer> codigosCargas) {
+        if (codigosCargas.isEmpty()) {
+            return Set.of();
+        }
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT DISTINCT
+                t.numcaranterior AS numCarAnterior
+            FROM
+                pclogtransfnfcarreg t
+            WHERE
+                1 = 1
+            """);
+
+        List<Object> parametros = new ArrayList<>();
+        adicionarFiltroIn(sql, parametros, "t.numcaranterior", codigosCargas);
+
+        List<Integer> numCars = jdbcTemplate.query(
+                sql.toString(),
+                parametros.toArray(),
+                (rs, rowNum) -> rs.getInt("numCarAnterior")
+        );
+
+        return new HashSet<>(numCars);
+    }
+
+    private record DevolucaoRow(int numCar, String codDevol) {
     }
 
     private void adicionarFiltroIn(StringBuilder sql, List<Object> parametros, String coluna, List<Integer> codigos) {

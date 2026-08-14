@@ -8,8 +8,8 @@ import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
 
 /**
- * Um registro de transferência de pedido entre carregamentos — mesmo shape
- * do TransferenciaResponse da frota-pro-api.
+ * Um registro de transferência de pedido entre carregamentos
+ * (PCLOGTRANSFNFCARREG), relativo ao numCar consultado.
  */
 @Data
 @Builder
@@ -23,6 +23,11 @@ public class TransferenciaWinThorDto {
     private OffsetDateTime dtTransferencia;
     private String motivo;
 
-    /** "PERDIDA" (essa carga perdeu o pedido) ou "RECEBIDA" (essa carga recebeu o pedido). */
+    /**
+     * "PERDIDA" quando o numCar consultado é o numCarAnterior (esse
+     * carregamento perdeu o pedido pro numCarAtual). "RECEBIDA" quando o
+     * numCar consultado é o numCarAtual (esse carregamento recebeu o pedido
+     * que veio do numCarAnterior).
+     */
     private String direcao;
 }

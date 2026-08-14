@@ -3,9 +3,11 @@ package br.com.frotasPro.integradora.winthor.service;
 import br.com.frotasPro.integradora.winthor.dto.DevolucaoWinThorDto;
 import br.com.frotasPro.integradora.winthor.dto.TransferenciaWinThorDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
@@ -13,67 +15,60 @@ import java.time.ZoneId;
 import java.util.List;
 
 /**
- * Detalhe (produto a produto / nota a nota) de devolução e transferência de
- * pedido de um carregamento, buscado ao vivo no WinThor — nada fica guardado
- * aqui. Complementa o resumo que já vai embutido na sincronização em lote
- * (CargaWinThorService.preencherDevolucaoETransferencia).
+ * Detalhe (produto a produto / nota a nota) por trás dos resumos que já
+ * viajam no sync de carga (CargaWinThorDto.codigosDevolucao/temTransferencia).
+ * Consultado só sob demanda, quando o usuário abre o detalhe da carga —
+ * nunca guardado em disco/banco, igual ao XML/PDF de nota fiscal.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DevolucaoTransferenciaWinThorService {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public List<DevolucaoWinThorDto> buscarDevolucoes(Integer numeroCarga) {
+    public List<DevolucaoWinThorDto> buscarDevolucoes(Integer numCar) {
         String sql = """
             SELECT
-                d.coddevol   AS codDevolucao,
-                d.numnota    AS numNota,
-                d.numped     AS numPedido,
-                d.dtent      AS dtEntrada,
-                d.motivo     AS motivo,
-                d.codcli     AS codCliente,
-                d.cliente    AS nomeCliente,
-                d.codprod    AS codProduto,
-                d.descricao  AS descricaoProduto,
-                d.qt         AS quantidade,
-                d.unidade    AS unidade,
-                d.embalagem  AS embalagem,
-                d.vldevolucao AS valorDevolucao,
-                d.totpeso    AS pesoTotalKg,
-                d.fornecedor AS fornecedor,
+                d.coddevol      AS codDevolucao,
+                d.numnota       AS numNota,
+                d.numped        AS numPedido,
+                d.dtent         AS dtEntrada,
+                d.motivo        AS motivo,
+                d.codcli        AS codCliente,
+                d.cliente       AS nomeCliente,
+                d.codprod       AS codProduto,
+                d.descricao     AS descricaoProduto,
+                d.qt            AS quantidade,
+                d.unidade       AS unidade,
+                d.embalagem     AS embalagem,
+                d.vldevolucao   AS valorDevolucao,
+                d.totpeso       AS pesoTotalKg,
+                d.fornecedor    AS fornecedor,
                 d.nomemotorista AS nomeMotoristaDevolucao
-            FROM
-                pcnfsaid n
-                JOIN view_devol_resumo_faturamento d
-                    ON d.numnota = n.numnota
-            WHERE
-                n.numcar = ?
-                AND d.coddevol IS NOT NULL
-            ORDER BY
-                d.dtent DESC
+            FROM pcnfsaid n
+            JOIN view_devol_resumo_faturamento d ON d.numtransvenda = n.numtransvenda
+            WHERE n.numcar = ?
+            ORDER BY d.numnota, d.codprod
             """;
 
-        return jdbcTemplate.query(sql, (rs, rowNum) -> mapDevolucao(rs), numeroCarga);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> mapDevolucao(rs), numCar);
     }
 
-    public List<TransferenciaWinThorDto> buscarTransferencias(Integer numeroCarga) {
+    public List<TransferenciaWinThorDto> buscarTransferencias(Integer numCar) {
         String sql = """
             SELECT
-                numnota,
-                numcaratual,
-                numcaranterior,
-                dttransf,
-                motivotransf
-            FROM
-                pclogtransfnfcarreg
-            WHERE
-                numcaratual = ? OR numcaranterior = ?
-            ORDER BY
-                dttransf DESC
+                t.numnota       AS numNota,
+                t.numcaratual   AS numCarAtual,
+                t.numcaranterior AS numCarAnterior,
+                t.dttransf      AS dtTransferencia,
+                t.motivotransf  AS motivo
+            FROM pclogtransfnfcarreg t
+            WHERE t.numcaranterior = ? OR t.numcaratual = ?
+            ORDER BY t.dttransf DESC
             """;
 
-        return jdbcTemplate.query(sql, (rs, rowNum) -> mapTransferencia(rs, numeroCarga), numeroCarga, numeroCarga);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> mapTransferencia(rs, numCar), numCar, numCar);
     }
 
     private DevolucaoWinThorDto mapDevolucao(ResultSet rs) throws SQLException {
@@ -97,41 +92,43 @@ public class DevolucaoTransferenciaWinThorService {
                 .build();
     }
 
-    private TransferenciaWinThorDto mapTransferencia(ResultSet rs, Integer numeroCargaConsultado) throws SQLException {
-        Integer numCarAtual = getInteger(rs, "numcaratual");
-        Integer numCarAnterior = getInteger(rs, "numcaranterior");
+    private TransferenciaWinThorDto mapTransferencia(ResultSet rs, Integer numCarConsultado) throws SQLException {
+        Integer numCarAtual = getInteger(rs, "numCarAtual");
+        Integer numCarAnterior = getInteger(rs, "numCarAnterior");
 
-        String direcao = numeroCargaConsultado.equals(numCarAnterior) ? "PERDIDA" : "RECEBIDA";
+        String direcao = numCarConsultado.equals(numCarAnterior) ? "PERDIDA" : "RECEBIDA";
 
         return TransferenciaWinThorDto.builder()
-                .numNota(getLong(rs, "numnota"))
+                .numNota(getLong(rs, "numNota"))
                 .numCarAtual(numCarAtual)
                 .numCarAnterior(numCarAnterior)
-                .dtTransferencia(toOffsetDateTime(rs.getTimestamp("dttransf")))
-                .motivo(rs.getString("motivotransf"))
+                .dtTransferencia(toOffsetDateTime(rs.getTimestamp("dtTransferencia")))
+                .motivo(rs.getString("motivo"))
                 .direcao(direcao)
                 .build();
     }
 
     private OffsetDateTime toOffsetDateTime(java.sql.Timestamp ts) {
-        if (ts == null) {
-            return null;
-        }
+        if (ts == null) return null;
         return ts.toInstant().atOffset(ZoneId.systemDefault().getRules().getOffset(ts.toInstant()));
     }
 
-    private Integer getInteger(ResultSet rs, String coluna) throws SQLException {
-        int valor = rs.getInt(coluna);
-        return rs.wasNull() ? null : valor;
+    // O driver Oracle sempre devolve colunas NUMBER como BigDecimal via
+    // getObject/ResultSetMetaData, mesmo quando o valor é logicamente um
+    // inteiro — um cast direto pra Integer/Long/Double quebra com
+    // ClassCastException. Sempre passar pelo BigDecimal primeiro.
+    private Integer getInteger(ResultSet rs, String column) throws SQLException {
+        BigDecimal valor = rs.getBigDecimal(column);
+        return valor != null ? valor.intValue() : null;
     }
 
-    private Long getLong(ResultSet rs, String coluna) throws SQLException {
-        long valor = rs.getLong(coluna);
-        return rs.wasNull() ? null : valor;
+    private Long getLong(ResultSet rs, String column) throws SQLException {
+        BigDecimal valor = rs.getBigDecimal(column);
+        return valor != null ? valor.longValue() : null;
     }
 
-    private Double getDouble(ResultSet rs, String coluna) throws SQLException {
-        double valor = rs.getDouble(coluna);
-        return rs.wasNull() ? null : valor;
+    private Double getDouble(ResultSet rs, String column) throws SQLException {
+        BigDecimal valor = rs.getBigDecimal(column);
+        return valor != null ? valor.doubleValue() : null;
     }
 }

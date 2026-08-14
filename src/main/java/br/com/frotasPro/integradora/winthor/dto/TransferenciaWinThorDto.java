@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
@@ -30,4 +31,8 @@ public class TransferenciaWinThorDto {
      * que veio do numCarAnterior).
      */
     private String direcao;
+
+    /** Peso (kg) e valor (R$) da nota transferida, vindos de pcnfsaid.totpeso/vltotal. */
+    private BigDecimal pesoKg;
+    private BigDecimal valorTotal;
 }

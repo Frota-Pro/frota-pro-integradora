@@ -62,8 +62,11 @@ public class DevolucaoTransferenciaWinThorService {
                 t.numcaratual   AS numCarAtual,
                 t.numcaranterior AS numCarAnterior,
                 t.dttransf      AS dtTransferencia,
-                t.motivotransf  AS motivo
+                t.motivotransf  AS motivo,
+                n.totpeso       AS pesoKg,
+                n.vltotal       AS valorTotal
             FROM pclogtransfnfcarreg t
+            LEFT JOIN pcnfsaid n ON n.numnota = t.numnota AND n.codfilial = 1
             WHERE t.numcaranterior = ? OR t.numcaratual = ?
             ORDER BY t.dttransf DESC
             """;
@@ -105,6 +108,8 @@ public class DevolucaoTransferenciaWinThorService {
                 .dtTransferencia(toOffsetDateTime(rs.getTimestamp("dtTransferencia")))
                 .motivo(rs.getString("motivo"))
                 .direcao(direcao)
+                .pesoKg(rs.getBigDecimal("pesoKg"))
+                .valorTotal(rs.getBigDecimal("valorTotal"))
                 .build();
     }
 

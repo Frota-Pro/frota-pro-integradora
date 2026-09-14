@@ -254,6 +254,13 @@ public class CargaWinThorService {
                 n.codcli                     AS codCli,
                 cli.cliente                  AS nomeCli,
                 pca.praca                    AS cidade,
+                cli.cgcent                   AS documento,
+                cli.enderent                 AS logradouro,
+                cli.numeroent                AS numero,
+                cli.bairroent                AS bairro,
+                cli.municent                 AS municipio,
+                cli.estent                   AS uf,
+                cli.cepent                   AS cep,
                 LISTAGG(DISTINCT n.numnota, ',')
                     WITHIN GROUP (ORDER BY n.numnota) AS notas
             FROM
@@ -291,7 +298,14 @@ public class CargaWinThorService {
                 n.numcar,
                 n.codcli,
                 cli.cliente,
-                pca.praca
+                pca.praca,
+                cli.cgcent,
+                cli.enderent,
+                cli.numeroent,
+                cli.bairroent,
+                cli.municent,
+                cli.estent,
+                cli.cepent
             ORDER BY
                 m.nummdfe,
                 n.numcar,
@@ -321,9 +335,16 @@ public class CargaWinThorService {
                         return ClienteCargaWinThorDto.builder()
                                 .codCli(existente.getCodCli())
                                 .nomeCli(existente.getNomeCli())
-                                // cidade deveria ser sempre a mesma pro mesmo cliente; se por
-                                // algum motivo vier diferente entre MDF-e's, fica com a primeira não-nula.
+                                // cidade/endereço deveriam ser sempre os mesmos pro mesmo cliente; se por
+                                // algum motivo vier diferente entre MDF-e's, fica com o primeiro não-nulo.
                                 .cidade(existente.getCidade() != null ? existente.getCidade() : novo.getCidade())
+                                .documento(existente.getDocumento() != null ? existente.getDocumento() : novo.getDocumento())
+                                .logradouro(existente.getLogradouro() != null ? existente.getLogradouro() : novo.getLogradouro())
+                                .numero(existente.getNumero() != null ? existente.getNumero() : novo.getNumero())
+                                .bairro(existente.getBairro() != null ? existente.getBairro() : novo.getBairro())
+                                .municipio(existente.getMunicipio() != null ? existente.getMunicipio() : novo.getMunicipio())
+                                .uf(existente.getUf() != null ? existente.getUf() : novo.getUf())
+                                .cep(existente.getCep() != null ? existente.getCep() : novo.getCep())
                                 .notas(new ArrayList<>(notasUnidas))
                                 .build();
                     }
@@ -470,11 +491,18 @@ public class CargaWinThorService {
     }
 
     private ClienteRow mapClienteRow(ResultSet rs) throws SQLException {
-        int numCar      = rs.getInt("numCar");
-        int codCli      = rs.getInt("codCli");
-        String nomeCli  = rs.getString("nomeCli");
-        String cidade   = rs.getString("cidade");
-        String notasStr = rs.getString("notas");
+        int numCar        = rs.getInt("numCar");
+        int codCli        = rs.getInt("codCli");
+        String nomeCli    = rs.getString("nomeCli");
+        String cidade     = rs.getString("cidade");
+        String documento  = rs.getString("documento");
+        String logradouro = rs.getString("logradouro");
+        String numero     = rs.getString("numero");
+        String bairro     = rs.getString("bairro");
+        String municipio  = rs.getString("municipio");
+        String uf         = rs.getString("uf");
+        String cep        = rs.getString("cep");
+        String notasStr   = rs.getString("notas");
 
         List<Long> notas = notasStr == null || notasStr.isBlank()
                 ? Collections.emptyList()
@@ -484,16 +512,29 @@ public class CargaWinThorService {
                 .map(Long::valueOf)
                 .collect(Collectors.toList());
 
-        return new ClienteRow(numCar, codCli, nomeCli, cidade, notas);
+        return new ClienteRow(numCar, codCli, nomeCli, cidade, documento, logradouro, numero, bairro, municipio,
+                uf, cep, notas);
     }
 
-    private record ClienteRow(int numCar, int codCli, String nomeCli, String cidade, List<Long> notas) {
+    private record ClienteRow(
+            int numCar, int codCli, String nomeCli, String cidade,
+            String documento, String logradouro, String numero, String bairro, String municipio,
+            String uf, String cep,
+            List<Long> notas
+    ) {
 
         ClienteCargaWinThorDto toDto() {
             return ClienteCargaWinThorDto.builder()
                     .codCli(codCli)
                     .nomeCli(nomeCli)
                     .cidade(cidade)
+                    .documento(documento)
+                    .logradouro(logradouro)
+                    .numero(numero)
+                    .bairro(bairro)
+                    .municipio(municipio)
+                    .uf(uf)
+                    .cep(cep)
                     .notas(notas)
                     .build();
         }

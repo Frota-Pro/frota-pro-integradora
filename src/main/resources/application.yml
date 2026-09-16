@@ -21,6 +21,15 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Um job de sync pode trazer centenas de cargas (com notas/clientes) de
+      # uma vez e passar do 1MB padrão do Kafka — RecordTooLargeException.
+      # Sobe o limite do produtor e comprime (JSON comprime bem, ~3-5x) pra
+      # sobrar bastante margem. Precisa bater com o message.max.bytes do
+      # broker/tópico em produção (ver aviso no README/infra) e com o
+      # max.partition.fetch.bytes do consumidor (frota-pro-api).
+      properties:
+        max.request.size: 10485760
+        compression.type: gzip
 
 server:
   port: 8081

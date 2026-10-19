@@ -174,6 +174,8 @@ public class CargaWinThorService {
                 n.numcar                     AS numCar,
                 m.codmotorista               AS codMotorista,
                 m.codveiculo                 AS codVeiculo,
+                e.nome                       AS nomeMotorista,
+                v.placa                      AS placaVeiculo,
                 c.numnotas                   AS numNotas,
                 MAX(n.dtsaida)               AS dtSaida,
                 c.totpeso / 1000.0           AS totalPeso,
@@ -225,6 +227,8 @@ public class CargaWinThorService {
                 n.numcar,
                 m.codmotorista,
                 m.codveiculo,
+                e.nome,
+                v.placa,
                 c.numnotas,
                 c.totpeso,
                 m.situacaomdfe,
@@ -463,6 +467,8 @@ public class CargaWinThorService {
         Integer numCar      = rs.getInt("numCar");
         Integer codMot      = rs.getInt("codMotorista");
         String codVeiculo   = rs.getString("codVeiculo");
+        String nomeMotorista = rs.getString("nomeMotorista");
+        String placaVeiculo  = rs.getString("placaVeiculo");
         java.sql.Timestamp tsSaida = rs.getTimestamp("dtSaida");
 
         OffsetDateTime dtSaida = tsSaida != null
@@ -480,6 +486,8 @@ public class CargaWinThorService {
                 .numCar(numCar)
                 .codMotorista(codMot)
                 .codVeiculo(codVeiculo)
+                .nomeMotorista(nomeMotorista)
+                .placaVeiculo(placaVeiculo)
                 .dtSaida(dtSaida)
                 .pesoTotalKg(totalPeso)
                 .valorTotal(valorTotal)

@@ -42,9 +42,15 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      # só o status de cada componente (a API lê components.db.status); sem detalhes de banco/disco
+      show-details: never
+      show-components: always
 
 frotapro:
+  integradora:
+    # Segredo exigido de quem chama a integradora (X-Integradora-Token). Mesmo valor da frota-pro-api.
+    api-token: ${INTEGRADORA_API_TOKEN:}
+
   kafka:
     topics:
       carga-sync-request: frotapro.carga.sync.request

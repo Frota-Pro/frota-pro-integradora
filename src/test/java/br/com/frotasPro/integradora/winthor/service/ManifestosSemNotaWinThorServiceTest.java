@@ -21,7 +21,7 @@ class ManifestosSemNotaWinThorServiceTest {
     }
 
     private static List<CargaWinThorDto> converter(List<ManifestoSemNotaDto> lista, List<Integer> caminhoes, List<Integer> motoristas) {
-        return ManifestosSemNotaWinThorService.comoCargas(lista, Set.of("101"), caminhoes, motoristas);
+        return ManifestosSemNotaWinThorService.comoCargas(lista, Set.of("100", "102"), caminhoes, motoristas);
     }
 
     @Test
@@ -43,9 +43,22 @@ class ManifestosSemNotaWinThorServiceTest {
     }
 
     @Test
-    void manifestoCanceladoOuIncompletoFicaDeFora() {
+    void soValeManifestoAprovadoOuEncerradoCanceladoERejeitadoFicamDeFora() {
         var lista = List.of(
-                manifesto(1, 905, "123", "101", LocalDate.of(2026, 10, 3), "10"),     // cancelado
+                manifesto(1, 905, "123", "100", LocalDate.of(2026, 10, 3), "10"),     // aprovado (aberto)
+                manifesto(2, 905, "123", "102", LocalDate.of(2026, 10, 3), "10"),     // encerrado
+                manifesto(3, 905, "123", "101", LocalDate.of(2026, 10, 3), "10"),     // cancelado
+                manifesto(4, 905, "123", "228", LocalDate.of(2026, 10, 3), "10"),     // rejeitado pela SEFAZ
+                manifesto(5, 905, "123", "0", LocalDate.of(2026, 10, 3), "10"));      // nunca enviado
+
+        assertEquals(List.of(1L, 2L), converter(lista, List.of(), List.of()).stream().map(CargaWinThorDto::getNumMdfe).toList());
+        assertEquals(5, ManifestosSemNotaWinThorService.comoCargas(lista, Set.of(), List.of(), List.of()).size(), "conjunto vazio = não filtra");
+        assertEquals(2, ManifestosSemNotaWinThorService.apenasValidos(lista, Set.of("100", "102")).size());
+    }
+
+    @Test
+    void manifestoIncompletoFicaDeFora() {
+        var lista = List.of(
                 manifesto(2, null, "123", "100", LocalDate.of(2026, 10, 3), "10"),    // sem motorista
                 manifesto(3, 905, null, "100", LocalDate.of(2026, 10, 3), "10"),      // sem veículo
                 manifesto(4, 905, "123", "100", null, "10"),                          // sem data

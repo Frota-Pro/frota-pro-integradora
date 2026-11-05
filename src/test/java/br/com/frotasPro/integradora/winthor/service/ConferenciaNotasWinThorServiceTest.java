@@ -98,7 +98,25 @@ class ConferenciaNotasWinThorServiceTest {
     }
 
     @Test
+    void notaSoEmManifestoCanceladoOuRejeitadoNaoViajouEManifestoValidoSubstituiORuim() {
+        var linhas = List.of(
+                new ConferenciaNotasWinThorService.LinhaMdfe(1, 10, 1, "A", "101"),   // só cancelado: não viajou
+                new ConferenciaNotasWinThorService.LinhaMdfe(2, 30, 3, "C", "228"),   // rejeitado, mais novo
+                new ConferenciaNotasWinThorService.LinhaMdfe(2, 20, 2, "B", "102"),   // encerrado: vale
+                new ConferenciaNotasWinThorService.LinhaMdfe(3, 40, 4, "D", null));   // sem situação
+
+        var escolhidos = ConferenciaNotasWinThorService.escolherMdfePorNota(linhas, Set.of("100", "102"));
+
+        assertTrue(!escolhidos.containsKey(1L));
+        assertEquals(20L, escolhidos.get(2L).numMdfe());
+        assertTrue(!escolhidos.containsKey(3L));
+        assertEquals(3, ConferenciaNotasWinThorService.escolherMdfePorNota(linhas).size(), "sem filtro, todas entram");
+    }
+
+    @Test
     void colunasDoManifestoSaoDescobertasEntreOsNomesConhecidos() {
+        assertEquals("DATAHORAGERACAO", ColunasManifesto.colunaData(Set.of("NUMMDFE", "DATAHORAGERACAO", "DATAHORAAUTORSEFAZ")).orElseThrow(),
+                "a coluna real do WinThor da empresa");
         assertEquals("DTEMISSAO", ColunasManifesto.colunaData(Set.of("NUMMDFE", "DTEMISSAO", "DATA")).orElseThrow());
         assertEquals("TOTPESO", ColunasManifesto.colunaPeso(Set.of("NUMMDFE", "TOTPESO")).orElseThrow());
         assertTrue(ColunasManifesto.colunaData(Set.of("NUMMDFE", "CODMOTORISTA")).isEmpty());

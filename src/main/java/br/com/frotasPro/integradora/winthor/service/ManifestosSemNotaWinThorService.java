@@ -33,6 +33,14 @@ public class ManifestosSemNotaWinThorService {
 
     private static final Pattern IDENTIFICADOR = Pattern.compile("[A-Z][A-Z0-9_]{0,29}");
 
+    /** Mantém só os manifestos em situação válida (100 aprovado, 102 encerrado). Conjunto vazio = não filtra. */
+    static List<ManifestoSemNotaDto> apenasValidos(List<ManifestoSemNotaDto> manifestos, Set<String> situacoesValidas) {
+        if (situacoesValidas.isEmpty()) return manifestos;
+        return manifestos.stream()
+                .filter(m -> m.getSituacao() != null && situacoesValidas.contains(m.getSituacao().trim()))
+                .toList();
+    }
+
     /** Destino mostrado na carga de manifesto sem nota (o manifesto não tem cliente nem cidade de entrega). */
     static final String DESTINO_SEM_NOTA = "MANIFESTO SEM NOTA";
 
@@ -75,15 +83,16 @@ public class ManifestosSemNotaWinThorService {
 
     /**
      * Manifesto sem nota como carga sem valor, para o sync: não tem numCar (a chave é o número do manifesto),
-     * não tem cliente nem nota, e o peso é o do manifesto. Manifesto cancelado (situações em {@code excluir}) fica de fora.
+     * não tem cliente nem nota, e o peso é o do manifesto. Só vale manifesto em situação válida (100 aprovado,
+     * 102 encerrado); cancelado e rejeitado pela SEFAZ ficam de fora. Conjunto vazio = não filtra.
      */
-    static List<CargaWinThorDto> comoCargas(List<ManifestoSemNotaDto> manifestos, Set<String> situacoesExcluidas,
+    static List<CargaWinThorDto> comoCargas(List<ManifestoSemNotaDto> manifestos, Set<String> situacoesValidas,
                                             List<Integer> codigosCaminhoes, List<Integer> codigosMotoristas) {
         List<CargaWinThorDto> cargas = new ArrayList<>();
         for (ManifestoSemNotaDto m : manifestos) {
             if (m.getNumMdfe() == null || m.getCodVeiculo() == null || m.getCodMotorista() == null || m.getData() == null) continue;
             String situacao = m.getSituacao() == null ? "" : m.getSituacao().trim();
-            if (situacoesExcluidas.contains(situacao)) continue;
+            if (!situacoesValidas.isEmpty() && !situacoesValidas.contains(situacao)) continue;
             if (!codigosCaminhoes.isEmpty() && !codigosCaminhoes.stream().map(String::valueOf).toList().contains(m.getCodVeiculo().trim())) continue;
             if (!codigosMotoristas.isEmpty() && !codigosMotoristas.contains(m.getCodMotorista())) continue;
 

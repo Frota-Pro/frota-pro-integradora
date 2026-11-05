@@ -35,9 +35,12 @@ public class CargaWinThorService {
     @Value("${frotapro.sync.incluir-manifestos-sem-nota:true}")
     private boolean incluirManifestosSemNota = true;
 
-    /** Situações do MDF-e que não são viagem (cancelado). 100 = aprovado; 101 = cancelamento homologado. */
-    @Value("${frotapro.sync.manifesto-situacoes-excluidas:101}")
-    private List<String> situacoesManifestoExcluidas = List.of("101");
+    /**
+     * Situações do MDF-e que valem como viagem: 100 = aprovado (aberto) e 102 = encerrado (99% do histórico da
+     * empresa). Cancelado (101) e rejeitado pela SEFAZ (228, 611, 612, 675, 1000, 0) não valem. Vazio = não filtra.
+     */
+    @Value("${frotapro.sync.mdfe-situacoes-validas:100,102}")
+    private List<String> situacoesMdfeValidas = List.of("100", "102");
 
     /**
      * Liga o cálculo do valor/peso/data da carga pelas notas transportadas (não canceladas e com MDF-e).
@@ -109,7 +112,7 @@ public class CargaWinThorService {
         if (incluirManifestosSemNota && codigosCargasFiltro.isEmpty() && dataInicial != null && dataFinal != null) {
             cargas.addAll(ManifestosSemNotaWinThorService.comoCargas(
                     manifestosSemNota.buscar(dataInicial, dataFinal),
-                    new HashSet<>(situacoesManifestoExcluidas.stream().map(String::trim).toList()),
+                    situacoesValidas(),
                     codigosCaminhoesFiltro, codigosMotoristasFiltro));
         }
 
@@ -147,13 +150,18 @@ public class CargaWinThorService {
         }
 
         List<Long> numeros = notas.stream().filter(n -> !n.cancelada()).map(TotaisCargaTransportada.NotaCarga::numNota).distinct().toList();
+        // Manifesto cancelado ou rejeitado pela SEFAZ não é viagem: a nota só conta se estiver num manifesto válido.
+        Set<String> validas = situacoesValidas();
+        String filtroSituacao = validas.isEmpty() ? "" : " AND TRIM(m.situacaomdfe) IN (" + marcadores(validas.size()) + ")";
         Set<Long> comMdfe = new HashSet<>();
         for (List<Long> lote : lotes(numeros)) {
+            List<Object> parametros = new ArrayList<>(lote);
+            parametros.addAll(validas);
             comMdfe.addAll(jdbcTemplate.query(
                     "SELECT DISTINCT i.numnota FROM pcmanifestoeletronicoi i"
                             + " JOIN pcmanifestoeletronicoc m ON m.nummdfe = i.nummdfe AND m.codfilial = 1"
-                            + " WHERE i.numnota IN (" + marcadores(lote.size()) + ")",
-                    lote.toArray(),
+                            + " WHERE i.numnota IN (" + marcadores(lote.size()) + ")" + filtroSituacao,
+                    parametros.toArray(),
                     (rs, i) -> rs.getLong("numnota")));
         }
 
@@ -178,6 +186,10 @@ public class CargaWinThorService {
             c.setNotasTransportadas(t.notas());
             c.setSomenteTv10Terceiro(t.somenteTv10Terceiro());
         }
+    }
+
+    private Set<String> situacoesValidas() {
+        return new HashSet<>(situacoesMdfeValidas.stream().map(String::trim).filter(s -> !s.isEmpty()).toList());
     }
 
     private static String marcadores(int quantidade) {

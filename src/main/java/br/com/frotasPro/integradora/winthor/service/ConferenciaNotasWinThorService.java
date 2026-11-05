@@ -46,6 +46,10 @@ public class ConferenciaNotasWinThorService {
     private final JdbcTemplate jdbcTemplate;
     private final ManifestosSemNotaWinThorService manifestosSemNota;
 
+    /** Situações do MDF-e que valem como viagem (100 aprovado, 102 encerrado). Vazio = não filtra. */
+    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.mdfe-situacoes-validas:100,102}")
+    private List<String> situacoesMdfeValidas = List.of("100", "102");
+
     public List<NotaConferenciaWinThorDto> buscarNotas(LocalDate inicio, LocalDate fim) {
         validarPeriodo(inicio, fim);
 
@@ -102,7 +106,7 @@ public class ConferenciaNotasWinThorService {
                         rs.getString("codveiculo"),
                         rs.getString("situacaomdfe")),
                 de, ate, de, ate);
-        Map<Long, MdfeInfo> comMdfe = escolherMdfePorNota(linhasMdfe);
+        Map<Long, MdfeInfo> comMdfe = escolherMdfePorNota(linhasMdfe, situacoesValidas());
 
         Set<Integer> comCarregamento = new HashSet<>(jdbcTemplate.query(
                 "SELECT c.numcar FROM pccarreg c WHERE c.numcar IN (" + CARREGAMENTOS_DO_PERIODO + ")",
@@ -130,8 +134,17 @@ public class ConferenciaNotasWinThorService {
      * o mais recente: a mesma escolha que a integradora faz ao montar a carga.
      */
     static Map<Long, MdfeInfo> escolherMdfePorNota(List<LinhaMdfe> linhas) {
+        return escolherMdfePorNota(linhas, Set.of());
+    }
+
+    /**
+     * Só entra manifesto em situação válida: nota que só consta em manifesto cancelado ou rejeitado pela SEFAZ
+     * não viajou, então fica sem MDF-e. Conjunto vazio = não filtra.
+     */
+    static Map<Long, MdfeInfo> escolherMdfePorNota(List<LinhaMdfe> linhas, Set<String> situacoesValidas) {
         Map<Long, LinhaMdfe> escolhida = new HashMap<>();
         for (LinhaMdfe l : linhas) {
+            if (!situacoesValidas.isEmpty() && (l.situacao() == null || !situacoesValidas.contains(l.situacao().trim()))) continue;
             escolhida.merge(l.numNota(), l, (atual, nova) -> {
                 boolean atualOk = "100".equals(atual.situacao() == null ? null : atual.situacao().trim());
                 boolean novaOk = "100".equals(nova.situacao() == null ? null : nova.situacao().trim());
@@ -147,7 +160,11 @@ public class ConferenciaNotasWinThorService {
     /** Manifestos da filial 1 sem nenhuma nota no período (ver {@link ManifestosSemNotaWinThorService}). */
     public List<ManifestoSemNotaDto> buscarManifestosSemNota(LocalDate inicio, LocalDate fim) {
         validarPeriodo(inicio, fim);
-        return manifestosSemNota.buscar(inicio, fim);
+        return ManifestosSemNotaWinThorService.apenasValidos(manifestosSemNota.buscar(inicio, fim), situacoesValidas());
+    }
+
+    private Set<String> situacoesValidas() {
+        return new HashSet<>(situacoesMdfeValidas.stream().map(String::trim).filter(s -> !s.isEmpty()).toList());
     }
 
     /** Devolução (valor e peso) das notas emitidas no período, somada de todos os produtos devolvidos. */

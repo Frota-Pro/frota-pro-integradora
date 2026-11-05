@@ -16,11 +16,7 @@ import java.util.List;
 public class CargaWinThorDto {
 
     private Long numMdfe;
-    /** Nulo quando é manifesto sem nota ({@link #semNota}): a chave da carga é então o número do manifesto. */
     private Integer numCar;
-
-    /** Manifesto sem nenhuma nota: viagem sem valor, só com o peso do manifesto. */
-    private Boolean semNota;
 
     private String codVeiculo;
     private Integer codMotorista;
@@ -32,7 +28,6 @@ public class CargaWinThorDto {
     private OffsetDateTime dtSaida;
     private String destino;
 
-    /** Apesar do nome, em TONELADAS (PCCARREG.TOTPESO / 1000): é a unidade de Carga.pesoCarga. */
     private Double pesoTotalKg;
     private BigDecimal valorTotal;
     private String situacaoMdfe;
@@ -51,20 +46,4 @@ public class CargaWinThorDto {
      * ou seja, perdeu pedido(s) transferido(s) pra outro carregamento.
      */
     private Boolean temTransferencia;
-
-    /**
-     * Como o carregamento nasceu, pelo log de transferência: "REENTREGA" (pedido que voltou e ganhou carga
-     * própria) ou "TRANSFERENCIA" (pedido passado de outra carga). Nulo = carga comum.
-     */
-    private String origemCarga;
-    /** Carregamento de onde veio o primeiro pedido, quando {@link #origemCarga} está preenchida. */
-    private Integer origemNumCar;
-
-    /** Quantas notas do carregamento são transporte (não canceladas e com MDF-e). */
-    private Integer notasTransportadas;
-    /**
-     * Todas as notas transportadas são TV10 de cliente cujo transporte é de terceiro (15575, 10073):
-     * motorista ou caminhão podem não existir no FrotaPRO.
-     */
-    private Boolean somenteTv10Terceiro;
 }

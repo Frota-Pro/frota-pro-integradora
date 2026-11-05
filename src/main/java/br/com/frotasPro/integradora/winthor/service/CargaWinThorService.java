@@ -4,7 +4,6 @@ import br.com.frotasPro.integradora.winthor.dto.CargaWinThorDto;
 import br.com.frotasPro.integradora.winthor.dto.ClienteCargaWinThorDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -25,40 +24,7 @@ public class CargaWinThorService {
     // Código de situação do MDF-e confirmado no WinThor (tela 1455) como "Aprovado".
     private static final String SITUACAO_MDFE_APROVADO = "100";
 
-    /** Máximo de itens num IN do Oracle (o limite do banco é 1000). */
-    private static final int TAMANHO_LOTE_IN = 900;
-
     private final JdbcTemplate jdbcTemplate;
-    private final ManifestosSemNotaWinThorService manifestosSemNota;
-
-    /**
-     * Traz também os manifestos sem nota (viagem sem valor) quando o sync é por período. Desligado por padrão: em
-     * outubro/2026 não havia nenhum manifesto sem linha de nota no banco da empresa (o que existe é manifesto sem
-     * carregamento, e não houve nenhum), então a consulta não acharia nada a cada sincronização.
-     */
-    @Value("${frotapro.sync.incluir-manifestos-sem-nota:false}")
-    private boolean incluirManifestosSemNota = false;
-
-    /**
-     * Situações do MDF-e que valem como viagem: 100 = aprovado (aberto) e 102 = encerrado (99% do histórico da
-     * empresa). Cancelado (101) e rejeitado pela SEFAZ (228, 611, 612, 675, 1000, 0) não valem. Vazio = não filtra.
-     */
-    @Value("${frotapro.sync.mdfe-situacoes-validas:100,102}")
-    private List<String> situacoesMdfeValidas = List.of("100", "102");
-
-    /**
-     * Liga o cálculo do valor/peso/data da carga pelas notas transportadas (não canceladas e com MDF-e).
-     * Desligado, a integradora volta a somar todas as notas do carregamento, como antes.
-     */
-    @Value("${frotapro.sync.valor-pelas-notas-transportadas:true}")
-    private boolean valorPelasNotasTransportadas = true;
-
-    /** Tipos de venda e clientes cujo transporte é de terceiro (TV10 dos clientes 15575 e 10073). */
-    @Value("${frotapro.sync.tv-terceiro:10}")
-    private List<Integer> tvTerceiro = List.of(10);
-
-    @Value("${frotapro.sync.clientes-terceiro:15575,10073}")
-    private List<Integer> clientesTerceiro = List.of(15575, 10073);
 
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
@@ -106,120 +72,13 @@ public class CargaWinThorService {
 
         if (cargas.isEmpty()) {
             log.info("Nenhuma carga encontrada no WinThor para o período/códigos informados.");
-        } else {
-            preencherClientes(cargas);
-            preencherMotivosAlteracao(cargas);
-            // Etapa nova: se alguma consulta falhar no Oracle, a carga segue com os valores do carregamento
-            // (como antes) em vez de derrubar a sincronização inteira.
-            semDerrubarOSync("valor, peso e data pelas notas transportadas", () -> aplicarTotaisDasNotasTransportadas(cargas));
+            return cargas;
         }
 
-        // Manifesto sem nota não tem numCar: só entra no sync por período, nunca quando o pedido é por código de carga.
-        if (incluirManifestosSemNota && codigosCargasFiltro.isEmpty() && dataInicial != null && dataFinal != null) {
-            cargas.addAll(ManifestosSemNotaWinThorService.comoCargas(
-                    manifestosSemNota.buscar(dataInicial, dataFinal),
-                    situacoesValidas(),
-                    codigosCaminhoesFiltro, codigosMotoristasFiltro));
-        }
+        preencherClientes(cargas);
+        preencherMotivosAlteracao(cargas);
 
         return cargas;
-    }
-
-    /**
-     * Troca o valor, o peso e a data da carga pelos das NOTAS TRANSPORTADAS do carregamento (não canceladas
-     * e dentro de um MDF-e da filial 1), em qualquer mês. Antes a carga somava todas as notas do carregamento,
-     * inclusive cancelada e sem manifesto, e a data só olhava as notas da janela do sync.
-     * Consultas pequenas e separadas, cruzadas em memória (subconsulta por linha trava o Oracle neste volume).
-     */
-    private void aplicarTotaisDasNotasTransportadas(List<CargaWinThorDto> cargas) {
-        if (!valorPelasNotasTransportadas || cargas.isEmpty()) {
-            return;
-        }
-        List<Integer> numCars = cargas.stream().map(CargaWinThorDto::getNumCar).filter(Objects::nonNull).distinct().toList();
-
-        List<TotaisCargaTransportada.NotaCarga> notas = new ArrayList<>();
-        for (List<Integer> lote : lotes(numCars)) {
-            notas.addAll(jdbcTemplate.query(
-                    "SELECT n.numcar, n.numnota, n.vltotal, n.totpeso, n.dtsaida, n.condvenda, n.codcli,"
-                            + " CASE WHEN n.dtcancel IS NULL THEN 0 ELSE 1 END AS cancelada"
-                            + " FROM pcnfsaid n WHERE n.codfilial = 1 AND n.numcar IN (" + marcadores(lote.size()) + ")",
-                    lote.toArray(),
-                    (rs, i) -> new TotaisCargaTransportada.NotaCarga(
-                            rs.getInt("numcar"),
-                            rs.getLong("numnota"),
-                            rs.getBigDecimal("vltotal"),
-                            rs.getBigDecimal("totpeso"),
-                            rs.getDate("dtsaida") != null ? rs.getDate("dtsaida").toLocalDate() : null,
-                            rs.getObject("condvenda") != null ? rs.getInt("condvenda") : null,
-                            rs.getObject("codcli") != null ? rs.getInt("codcli") : null,
-                            rs.getInt("cancelada") == 1)));
-        }
-
-        List<Long> numeros = notas.stream().filter(n -> !n.cancelada()).map(TotaisCargaTransportada.NotaCarga::numNota).distinct().toList();
-        // Manifesto cancelado ou rejeitado pela SEFAZ não é viagem: a nota só conta se estiver num manifesto válido.
-        Set<String> validas = situacoesValidas();
-        String filtroSituacao = validas.isEmpty() ? "" : " AND TRIM(m.situacaomdfe) IN (" + marcadores(validas.size()) + ")";
-        Set<Long> comMdfe = new HashSet<>();
-        for (List<Long> lote : lotes(numeros)) {
-            List<Object> parametros = new ArrayList<>(lote);
-            parametros.addAll(validas);
-            comMdfe.addAll(jdbcTemplate.query(
-                    "SELECT DISTINCT i.numnota FROM pcmanifestoeletronicoi i"
-                            + " JOIN pcmanifestoeletronicoc m ON m.nummdfe = i.nummdfe AND m.codfilial = 1"
-                            + " WHERE i.numnota IN (" + marcadores(lote.size()) + ")" + filtroSituacao,
-                    parametros.toArray(),
-                    (rs, i) -> rs.getLong("numnota")));
-        }
-
-        Map<Integer, TotaisCargaTransportada.Totais> totais = TotaisCargaTransportada.calcular(
-                notas, comMdfe, Set.copyOf(tvTerceiro), Set.copyOf(clientesTerceiro));
-
-        for (CargaWinThorDto c : cargas) {
-            var t = totais.get(c.getNumCar());
-            if (t == null) {
-                // nenhuma nota transportada hoje: mantém o que a consulta principal trouxe
-                c.setNotasTransportadas(0);
-                c.setSomenteTv10Terceiro(false);
-                continue;
-            }
-            c.setValorTotal(t.valor());
-            // apesar do nome, pesoTotalKg carrega TONELADAS (PCCARREG.TOTPESO / 1000), a unidade de Carga.pesoCarga
-            c.setPesoTotalKg(t.pesoToneladas().doubleValue());
-            if (t.dataUltimaNota() != null) {
-                java.time.Instant instante = t.dataUltimaNota().atStartOfDay(ZoneId.systemDefault()).toInstant();
-                c.setDtSaida(instante.atOffset(ZoneId.systemDefault().getRules().getOffset(instante)));
-            }
-            c.setNotasTransportadas(t.notas());
-            c.setSomenteTv10Terceiro(t.somenteTv10Terceiro());
-        }
-    }
-
-    private Set<String> situacoesValidas() {
-        return new HashSet<>(situacoesMdfeValidas.stream().map(String::trim).filter(s -> !s.isEmpty()).toList());
-    }
-
-    /**
-     * Roda uma etapa NOVA do sync sem deixar que um erro dela (ex.: consulta que o Oracle recusa) derrube a
-     * sincronização das cargas: o erro vai para o log e a carga segue com o que já tinha.
-     */
-    static void semDerrubarOSync(String etapa, Runnable acao) {
-        try {
-            acao.run();
-        } catch (RuntimeException e) {
-            log.error("Sync: a etapa '{}' falhou e foi ignorada; as cargas seguem sem ela. Motivo: {}", etapa, e.toString(), e);
-        }
-    }
-
-    private static String marcadores(int quantidade) {
-        return String.join(",", Collections.nCopies(quantidade, "?"));
-    }
-
-    private static <T> List<List<T>> lotes(List<T> itens) {
-        List<List<T>> resultado = new ArrayList<>();
-        for (int i = 0; i < itens.size(); i += TAMANHO_LOTE_IN) {
-            resultado.add(itens.subList(i, Math.min(itens.size(), i + TAMANHO_LOTE_IN)));
-        }
-        return resultado;
     }
 
     private CargaWinThorDto preferirMdfeVigente(CargaWinThorDto atual, CargaWinThorDto candidato) {
@@ -521,42 +380,10 @@ public class CargaWinThorService {
         Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
         Set<Integer> numCarsComTransferencia = buscarNumCarsComTransferencia(codigosCargas);
 
-        Map<Integer, String[]> origens = new HashMap<>();
-        semDerrubarOSync("origem da carga (reentrega/transferência)", () -> origens.putAll(buscarOrigemDasCargas(codigosCargas)));
-
         cargas.forEach(c -> {
             c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));
             c.setTemTransferencia(numCarsComTransferencia.contains(c.getNumCar()));
-            String[] origem = origens.get(c.getNumCar());
-            if (origem != null) {
-                c.setOrigemCarga(origem[0]);
-                c.setOrigemNumCar(origem[1] == null ? null : Integer.valueOf(origem[1]));
-            }
         });
-    }
-
-    /**
-     * Como cada carregamento nasceu, pelo primeiro registro do log de transferência em que ele é o destino:
-     * "REENTREGA" (pedido que voltou e ganhou carga própria, em geral pequena) ou "TRANSFERENCIA".
-     * Devolve numCar -> {origem, carregamento de onde veio}.
-     */
-    private Map<Integer, String[]> buscarOrigemDasCargas(List<Integer> codigosCargas) {
-        Map<Integer, String[]> resultado = new HashMap<>();
-        for (List<Integer> lote : lotes(codigosCargas)) {
-            jdbcTemplate.query(
-                    "SELECT t.numcaratual, t.numcaranterior, t.motivotransf FROM pclogtransfnfcarreg t"
-                            + " WHERE t.numcaratual IN (" + marcadores(lote.size()) + ") ORDER BY t.dttransf, t.numnota",
-                    lote.toArray(),
-                    rs -> {
-                        int destino = rs.getInt("numcaratual");
-                        if (resultado.containsKey(destino)) return;
-                        String motivo = rs.getString("motivotransf");
-                        String tipo = motivo != null && motivo.toUpperCase().contains("REENTREGA") ? "REENTREGA" : "TRANSFERENCIA";
-                        Object anterior = rs.getObject("numcaranterior");
-                        resultado.put(destino, new String[]{tipo, anterior == null ? null : String.valueOf(rs.getInt("numcaranterior"))});
-                    });
-        }
-        return resultado;
     }
 
     private Map<Integer, List<String>> buscarCodigosDevolucaoPorNumCar(List<Integer> codigosCargas) {

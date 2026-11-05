@@ -45,6 +45,18 @@ class TotaisCargaTransportadaTest {
     }
 
     @Test
+    void pesoDaCargaVaiParaToneladasPoisEssaEAUnidadeGuardadaNoFrotaPro() {
+        var notas = List.of(
+                nota(500, 1, "100", "26.392", LocalDate.of(2026, 10, 5), 1, 10, false),
+                nota(500, 2, "100", "9973.608", LocalDate.of(2026, 10, 5), 1, 10, false));
+
+        Totais t = calcular(notas, Set.of(1L, 2L)).get(500);
+
+        assertEquals(0, new BigDecimal("10000").compareTo(t.pesoKg()));
+        assertEquals(0, new BigDecimal("10").compareTo(t.pesoToneladas()), "10.000 kg = 10 toneladas");
+    }
+
+    @Test
     void dataEDeQualquerMesPoisAUltimaNotaDecideACarga() {
         var notas = List.of(
                 nota(500, 1, "100", "1", LocalDate.of(2026, 9, 30), 1, 10, false),

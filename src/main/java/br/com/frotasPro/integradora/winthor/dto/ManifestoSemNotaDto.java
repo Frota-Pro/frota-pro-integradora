@@ -20,7 +20,9 @@ public class ManifestoSemNotaDto {
 
     private Long numMdfe;
     private Integer codMotorista;
+    private String nomeMotorista;
     private String codVeiculo;
+    private String placa;
     private String situacao;
     private LocalDate data;
     /** Peso informado no manifesto, em kg; nulo se a coluna do peso não foi identificada. */

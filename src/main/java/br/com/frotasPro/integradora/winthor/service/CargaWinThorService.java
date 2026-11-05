@@ -29,6 +29,15 @@ public class CargaWinThorService {
     private static final int TAMANHO_LOTE_IN = 900;
 
     private final JdbcTemplate jdbcTemplate;
+    private final ManifestosSemNotaWinThorService manifestosSemNota;
+
+    /** Traz também os manifestos sem nota (viagem sem valor) quando o sync é por período. */
+    @Value("${frotapro.sync.incluir-manifestos-sem-nota:true}")
+    private boolean incluirManifestosSemNota = true;
+
+    /** Situações do MDF-e que não são viagem (cancelado). 100 = aprovado; 101 = cancelamento homologado. */
+    @Value("${frotapro.sync.manifesto-situacoes-excluidas:101}")
+    private List<String> situacoesManifestoExcluidas = List.of("101");
 
     /**
      * Liga o cálculo do valor/peso/data da carga pelas notas transportadas (não canceladas e com MDF-e).
@@ -90,12 +99,19 @@ public class CargaWinThorService {
 
         if (cargas.isEmpty()) {
             log.info("Nenhuma carga encontrada no WinThor para o período/códigos informados.");
-            return cargas;
+        } else {
+            preencherClientes(cargas);
+            preencherMotivosAlteracao(cargas);
+            aplicarTotaisDasNotasTransportadas(cargas);
         }
 
-        preencherClientes(cargas);
-        preencherMotivosAlteracao(cargas);
-        aplicarTotaisDasNotasTransportadas(cargas);
+        // Manifesto sem nota não tem numCar: só entra no sync por período, nunca quando o pedido é por código de carga.
+        if (incluirManifestosSemNota && codigosCargasFiltro.isEmpty() && dataInicial != null && dataFinal != null) {
+            cargas.addAll(ManifestosSemNotaWinThorService.comoCargas(
+                    manifestosSemNota.buscar(dataInicial, dataFinal),
+                    new HashSet<>(situacoesManifestoExcluidas.stream().map(String::trim).toList()),
+                    codigosCaminhoesFiltro, codigosMotoristasFiltro));
+        }
 
         return cargas;
     }
@@ -153,7 +169,8 @@ public class CargaWinThorService {
                 continue;
             }
             c.setValorTotal(t.valor());
-            c.setPesoTotalKg(t.pesoKg().doubleValue());
+            // apesar do nome, pesoTotalKg carrega TONELADAS (PCCARREG.TOTPESO / 1000), a unidade de Carga.pesoCarga
+            c.setPesoTotalKg(t.pesoToneladas().doubleValue());
             if (t.dataUltimaNota() != null) {
                 java.time.Instant instante = t.dataUltimaNota().atStartOfDay(ZoneId.systemDefault()).toInstant();
                 c.setDtSaida(instante.atOffset(ZoneId.systemDefault().getRules().getOffset(instante)));

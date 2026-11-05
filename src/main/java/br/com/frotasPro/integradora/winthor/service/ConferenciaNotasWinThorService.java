@@ -44,6 +44,7 @@ public class ConferenciaNotasWinThorService {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final ManifestosSemNotaWinThorService manifestosSemNota;
 
     public List<NotaConferenciaWinThorDto> buscarNotas(LocalDate inicio, LocalDate fim) {
         validarPeriodo(inicio, fim);
@@ -143,44 +144,10 @@ public class ConferenciaNotasWinThorService {
         return resultado;
     }
 
-    private static final Pattern IDENTIFICADOR = Pattern.compile("[A-Z][A-Z0-9_]{0,29}");
-
-    /**
-     * Manifestos da filial 1 sem nenhuma nota no período: viagem sem valor, só com o peso do manifesto.
-     * As colunas de data e de peso são descobertas no dicionário do Oracle (ver {@link ColunasManifesto}); sem
-     * coluna de data não há como filtrar o período e a lista vem vazia, com aviso no log.
-     */
+    /** Manifestos da filial 1 sem nenhuma nota no período (ver {@link ManifestosSemNotaWinThorService}). */
     public List<ManifestoSemNotaDto> buscarManifestosSemNota(LocalDate inicio, LocalDate fim) {
         validarPeriodo(inicio, fim);
-
-        Set<String> colunas = new HashSet<>(jdbcTemplate.queryForList(
-                "SELECT column_name FROM all_tab_columns WHERE table_name = 'PCMANIFESTOELETRONICOC'", String.class));
-        String colunaData = ColunasManifesto.colunaData(colunas).filter(c -> IDENTIFICADOR.matcher(c).matches()).orElse(null);
-        String colunaPeso = ColunasManifesto.colunaPeso(colunas).filter(c -> IDENTIFICADOR.matcher(c).matches()).orElse(null);
-        if (colunaData == null) {
-            log.warn("Manifestos sem nota: nenhuma coluna de data reconhecida em PCMANIFESTOELETRONICOC (colunas: {}).", colunas);
-            return List.of();
-        }
-
-        String sql = "SELECT m.nummdfe, m.codmotorista, m.codveiculo, m.situacaomdfe, m." + colunaData + " AS dt"
-                + (colunaPeso != null ? ", m." + colunaPeso + " AS peso" : ", NULL AS peso")
-                + " FROM pcmanifestoeletronicoc m"
-                + " LEFT JOIN pcmanifestoeletronicoi i ON i.nummdfe = m.nummdfe"
-                + " WHERE m.codfilial = 1 AND i.nummdfe IS NULL AND m." + colunaData + " >= ? AND m." + colunaData + " < ?"
-                + " ORDER BY m.nummdfe";
-
-        List<ManifestoSemNotaDto> lista = jdbcTemplate.query(sql,
-                (rs, n) -> ManifestoSemNotaDto.builder()
-                        .numMdfe(rs.getLong("nummdfe"))
-                        .codMotorista(rs.getObject("codmotorista") != null ? rs.getInt("codmotorista") : null)
-                        .codVeiculo(rs.getString("codveiculo"))
-                        .situacao(rs.getString("situacaomdfe"))
-                        .data(rs.getTimestamp("dt") != null ? rs.getTimestamp("dt").toLocalDateTime().toLocalDate() : null)
-                        .pesoKg(rs.getBigDecimal("peso"))
-                        .build(),
-                Date.valueOf(inicio), Date.valueOf(fim.plusDays(1)));
-        log.info("Conferência do transportado: {} manifestos sem nota (data={}, peso={}).", lista.size(), colunaData, colunaPeso);
-        return lista;
+        return manifestosSemNota.buscar(inicio, fim);
     }
 
     /** Devolução (valor e peso) das notas emitidas no período, somada de todos os produtos devolvidos. */

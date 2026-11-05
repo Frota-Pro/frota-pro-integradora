@@ -13,8 +13,8 @@ import java.util.Set;
  * dentro de um MDF-e da filial 1. Nota cancelada, ou que nunca entrou num manifesto, não viajou e não
  * pode somar no que a frota transportou. Função pura, sem banco.
  *
- * <p>O peso é a soma do peso das notas (em kg), então valor e peso saem da mesma lista de notas e
- * diminuem e aumentam juntos quando uma nota entra, sai ou é cancelada.
+ * <p>O peso é a soma do peso das notas (em kg; {@link Totais#pesoToneladas()} converte para a unidade da carga),
+ * então valor e peso saem da mesma lista de notas e diminuem e aumentam juntos quando uma nota entra, sai ou é cancelada.
  */
 final class TotaisCargaTransportada {
 
@@ -26,6 +26,14 @@ final class TotaisCargaTransportada {
     }
 
     record Totais(BigDecimal valor, BigDecimal pesoKg, LocalDate dataUltimaNota, int notas, boolean somenteTv10Terceiro) {
+
+        /**
+         * O peso da carga no FrotaPRO (Carga.pesoCarga) é guardado em TONELADAS: a consulta principal já traz
+         * PCCARREG.TOTPESO / 1000. O peso da nota (PCNFSAID.TOTPESO) é em kg, então divide por mil.
+         */
+        BigDecimal pesoToneladas() {
+            return pesoKg.divide(BigDecimal.valueOf(1000));
+        }
     }
 
     /**

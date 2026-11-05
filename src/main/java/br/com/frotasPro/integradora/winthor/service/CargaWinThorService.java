@@ -31,9 +31,13 @@ public class CargaWinThorService {
     private final JdbcTemplate jdbcTemplate;
     private final ManifestosSemNotaWinThorService manifestosSemNota;
 
-    /** Traz também os manifestos sem nota (viagem sem valor) quando o sync é por período. */
-    @Value("${frotapro.sync.incluir-manifestos-sem-nota:true}")
-    private boolean incluirManifestosSemNota = true;
+    /**
+     * Traz também os manifestos sem nota (viagem sem valor) quando o sync é por período. Desligado por padrão: em
+     * outubro/2026 não havia nenhum manifesto sem linha de nota no banco da empresa (o que existe é manifesto sem
+     * carregamento, e não houve nenhum), então a consulta não acharia nada a cada sincronização.
+     */
+    @Value("${frotapro.sync.incluir-manifestos-sem-nota:false}")
+    private boolean incluirManifestosSemNota = false;
 
     /**
      * Situações do MDF-e que valem como viagem: 100 = aprovado (aberto) e 102 = encerrado (99% do histórico da

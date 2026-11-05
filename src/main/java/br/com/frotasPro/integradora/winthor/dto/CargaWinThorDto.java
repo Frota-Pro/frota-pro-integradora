@@ -46,4 +46,20 @@ public class CargaWinThorDto {
      * ou seja, perdeu pedido(s) transferido(s) pra outro carregamento.
      */
     private Boolean temTransferencia;
+
+    /**
+     * Como o carregamento nasceu, pelo log de transferência: "REENTREGA" (pedido que voltou e ganhou carga
+     * própria) ou "TRANSFERENCIA" (pedido passado de outra carga). Nulo = carga comum.
+     */
+    private String origemCarga;
+    /** Carregamento de onde veio o primeiro pedido, quando {@link #origemCarga} está preenchida. */
+    private Integer origemNumCar;
+
+    /** Quantas notas do carregamento são transporte (não canceladas e com MDF-e). */
+    private Integer notasTransportadas;
+    /**
+     * Todas as notas transportadas são TV10 de cliente cujo transporte é de terceiro (15575, 10073):
+     * motorista ou caminhão podem não existir no FrotaPRO.
+     */
+    private Boolean somenteTv10Terceiro;
 }

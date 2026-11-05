@@ -109,7 +109,9 @@ public class CargaWinThorService {
         } else {
             preencherClientes(cargas);
             preencherMotivosAlteracao(cargas);
-            aplicarTotaisDasNotasTransportadas(cargas);
+            // Etapa nova: se alguma consulta falhar no Oracle, a carga segue com os valores do carregamento
+            // (como antes) em vez de derrubar a sincronização inteira.
+            semDerrubarOSync("valor, peso e data pelas notas transportadas", () -> aplicarTotaisDasNotasTransportadas(cargas));
         }
 
         // Manifesto sem nota não tem numCar: só entra no sync por período, nunca quando o pedido é por código de carga.
@@ -194,6 +196,18 @@ public class CargaWinThorService {
 
     private Set<String> situacoesValidas() {
         return new HashSet<>(situacoesMdfeValidas.stream().map(String::trim).filter(s -> !s.isEmpty()).toList());
+    }
+
+    /**
+     * Roda uma etapa NOVA do sync sem deixar que um erro dela (ex.: consulta que o Oracle recusa) derrube a
+     * sincronização das cargas: o erro vai para o log e a carga segue com o que já tinha.
+     */
+    static void semDerrubarOSync(String etapa, Runnable acao) {
+        try {
+            acao.run();
+        } catch (RuntimeException e) {
+            log.error("Sync: a etapa '{}' falhou e foi ignorada; as cargas seguem sem ela. Motivo: {}", etapa, e.toString(), e);
+        }
     }
 
     private static String marcadores(int quantidade) {
@@ -507,7 +521,8 @@ public class CargaWinThorService {
         Map<Integer, List<String>> devolucoesPorNumCar = buscarCodigosDevolucaoPorNumCar(codigosCargas);
         Set<Integer> numCarsComTransferencia = buscarNumCarsComTransferencia(codigosCargas);
 
-        Map<Integer, String[]> origens = buscarOrigemDasCargas(codigosCargas);
+        Map<Integer, String[]> origens = new HashMap<>();
+        semDerrubarOSync("origem da carga (reentrega/transferência)", () -> origens.putAll(buscarOrigemDasCargas(codigosCargas)));
 
         cargas.forEach(c -> {
             c.setCodigosDevolucao(devolucoesPorNumCar.getOrDefault(c.getNumCar(), List.of()));

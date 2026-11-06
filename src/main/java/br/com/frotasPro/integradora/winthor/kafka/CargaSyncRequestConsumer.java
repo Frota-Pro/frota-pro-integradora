@@ -5,6 +5,7 @@ import br.com.frotasPro.integradora.winthor.dto.CargaSyncResponseEvent;
 import br.com.frotasPro.integradora.winthor.service.CargaWinThorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +27,13 @@ public class CargaSyncRequestConsumer {
             }
     )
     public void consumir(CargaSyncRequestEvent event) {
+        // [job=...] em todo log desta rodada (veja logback-spring.xml)
+        try (MDC.MDCCloseable ignorado = MDC.putCloseable("jobId", String.valueOf(event.getJobId()))) {
+            processar(event);
+        }
+    }
+
+    private void processar(CargaSyncRequestEvent event) {
         log.info("📥 [INTEGRADORA] Pedido de sync recebido. jobId={} dataInicial={} dataFinal={} codigosCargas={}",
                 event.getJobId(), event.getDataInicial(), event.getDataFinal(), event.getCodigosCargas());
 

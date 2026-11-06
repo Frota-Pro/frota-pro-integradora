@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+        Mantém o log padrão do Spring Boot (console + logging.file.name, que o actuator/logfile e a tela de Logs
+        da API leem) e acrescenta recortes por assunto:
+
+          integradora-sincronizacao.log  leitura das cargas no WinThor e envio para a API
+          integradora-erros.log          só WARN e ERROR de qualquer lugar
+
+        [job=...] (logging.pattern.level no application.yml) é o código da rodada de sincronização.
+        Guarda 30 dias (logging.logback.rollingpolicy.max-history) e no máximo 1 GB por arquivo.
+    -->
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml" />
+    <include resource="org/springframework/boot/logging/logback/file-appender.xml" />
+
+    <property name="LOG_DIAS" value="30" />
+    <property name="LOG_TAMANHO_MAXIMO" value="1GB" />
+
+    <appender name="SINCRONIZACAO" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/integradora-sincronizacao.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/integradora-sincronizacao.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>${LOG_DIAS}</maxHistory>
+            <totalSizeCap>${LOG_TAMANHO_MAXIMO}</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="ERROS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <file>logs/integradora-erros.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/integradora-erros.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>${LOG_DIAS}</maxHistory>
+            <totalSizeCap>${LOG_TAMANHO_MAXIMO}</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="br.com.frotasPro.integradora.winthor.service.CargaWinThorService" level="INFO">
+        <appender-ref ref="SINCRONIZACAO" />
+    </logger>
+    <logger name="br.com.frotasPro.integradora.winthor.kafka.CargaSyncRequestConsumer" level="INFO">
+        <appender-ref ref="SINCRONIZACAO" />
+    </logger>
+    <logger name="br.com.frotasPro.integradora.winthor.kafka.CargaSyncResponseProducer" level="INFO">
+        <appender-ref ref="SINCRONIZACAO" />
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+        <appender-ref ref="ERROS" />
+    </root>
+
+</configuration>

@@ -86,3 +86,9 @@ resilience4j:
 logging:
   file:
     name: logs/frotapro-integradora.log
+  logback:
+    rollingpolicy:
+      max-history: 30
+  pattern:
+    # [job=...] = código da rodada de sincronização (MDC jobId); "-" fora de uma rodada
+    level: "%5p [job=%X{jobId:--}]"

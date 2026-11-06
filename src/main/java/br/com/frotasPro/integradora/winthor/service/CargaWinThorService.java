@@ -24,7 +24,18 @@ public class CargaWinThorService {
     // Código de situação do MDF-e confirmado no WinThor (tela 1455) como "Aprovado".
     private static final String SITUACAO_MDFE_APROVADO = "100";
 
+    // O Oracle aceita no máximo 1000 valores num IN; ficamos bem abaixo.
+    private static final int TAMANHO_LOTE_CODIGOS = 500;
+
     private final JdbcTemplate jdbcTemplate;
+
+    /**
+     * Além das cargas com nota de saída no período, lê também as cargas que tiveram transferência ou
+     * devolução no período (pela data da transferência/devolução, não pela data da nota).
+     * Desligue com frotapro.sync.ler-por-movimentacao=false para voltar a ler só pela data da nota.
+     */
+    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.ler-por-movimentacao:true}")
+    private boolean lerPorMovimentacao = true;
 
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
@@ -47,13 +58,24 @@ public class CargaWinThorService {
                 codigosMotoristasFiltro
         );
 
-        List<CargaWinThorDto> cargasPorCodigo = codigosCargasFiltro.isEmpty()
-                ? List.of()
-                : buscarCargasPorCodigos(
-                        codigosCargasFiltro,
-                        codigosCaminhoesFiltro,
-                        codigosMotoristasFiltro
-                );
+        // Cargas que tiveram transferência/devolução NO PERÍODO pedido, mesmo que as notas sejam de outra data
+        // (ex.: nota de 03/11 transferida hoje). Sem isso o sync de hoje só enxerga notas com saída hoje.
+        Set<Integer> codigosPorMovimentacao = buscarCodigosComMovimentacaoNoPeriodo(dataInicial, dataFinal);
+        Set<Integer> todosOsCodigos = new LinkedHashSet<>(codigosCargasFiltro);
+        todosOsCodigos.addAll(codigosPorMovimentacao);
+        if (!codigosPorMovimentacao.isEmpty()) {
+            log.info("Cargas com transferência/devolução no período {} a {} incluídas na leitura: {}",
+                    dataInicial, dataFinal, codigosPorMovimentacao);
+        }
+
+        List<CargaWinThorDto> cargasPorCodigo = new ArrayList<>();
+        for (List<Integer> lote : emLotes(new ArrayList<>(todosOsCodigos), TAMANHO_LOTE_CODIGOS)) {
+            cargasPorCodigo.addAll(buscarCargasPorCodigos(
+                    lote,
+                    codigosCaminhoesFiltro,
+                    codigosMotoristasFiltro
+            ));
+        }
 
         // Um carregamento (numCar) pode ter mais de um MDF-e emitido (ex: reemissão
         // trocando motorista/veículo). Preferimos o MDF-e com situação "100 - Aprovado"
@@ -79,6 +101,62 @@ public class CargaWinThorService {
         preencherMotivosAlteracao(cargas);
 
         return cargas;
+    }
+
+    /**
+     * Números dos carregamentos (origem e destino) que tiveram transferência de pedido
+     * (PCLOGTRANSFNFCARREG.dttransf) ou devolução (view_devol_resumo_faturamento.dtent) dentro do período.
+     * É uma leitura extra: se falhar, o sync segue só com as cargas por data da nota, como antes.
+     */
+    Set<Integer> buscarCodigosComMovimentacaoNoPeriodo(LocalDate dataInicial, LocalDate dataFinal) {
+        if (!lerPorMovimentacao || dataInicial == null || dataFinal == null) {
+            return Set.of();
+        }
+        Set<Integer> codigos = new LinkedHashSet<>();
+        java.sql.Date inicio = java.sql.Date.valueOf(dataInicial);
+        java.sql.Date fim = java.sql.Date.valueOf(dataFinal);
+
+        try {
+            jdbcTemplate.query(
+                    "SELECT t.numcaranterior AS a, t.numcaratual AS b FROM pclogtransfnfcarreg t"
+                            + " WHERE t.dttransf >= TRUNC(?) AND t.dttransf < TRUNC(?) + 1",
+                    (org.springframework.jdbc.core.RowCallbackHandler) rs -> {
+                        adicionarCarregamento(codigos, rs.getObject("a"));
+                        adicionarCarregamento(codigos, rs.getObject("b"));
+                    },
+                    inicio, fim);
+        } catch (RuntimeException e) {
+            log.warn("Não foi possível ler as transferências do período {} a {}; seguindo só pela data da nota: {}",
+                    dataInicial, dataFinal, e.getMessage());
+        }
+
+        try {
+            jdbcTemplate.query(
+                    "SELECT DISTINCT n.numcar AS a FROM pcnfsaid n"
+                            + " JOIN view_devol_resumo_faturamento d ON d.numtransvenda = n.numtransvenda"
+                            + " WHERE n.codfilial = 1 AND d.dtent >= TRUNC(?) AND d.dtent < TRUNC(?) + 1",
+                    (org.springframework.jdbc.core.RowCallbackHandler) rs -> adicionarCarregamento(codigos, rs.getObject("a")),
+                    inicio, fim);
+        } catch (RuntimeException e) {
+            log.warn("Não foi possível ler as devoluções do período {} a {}; seguindo só pela data da nota: {}",
+                    dataInicial, dataFinal, e.getMessage());
+        }
+
+        return codigos;
+    }
+
+    private static void adicionarCarregamento(Set<Integer> codigos, Object valor) {
+        if (valor instanceof Number n && n.intValue() > 1) {
+            codigos.add(n.intValue());
+        }
+    }
+
+    static <T> List<List<T>> emLotes(List<T> itens, int tamanho) {
+        List<List<T>> lotes = new ArrayList<>();
+        for (int i = 0; i < itens.size(); i += tamanho) {
+            lotes.add(itens.subList(i, Math.min(itens.size(), i + tamanho)));
+        }
+        return lotes;
     }
 
     private CargaWinThorDto preferirMdfeVigente(CargaWinThorDto atual, CargaWinThorDto candidato) {

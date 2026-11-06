@@ -37,6 +37,101 @@ public class CargaWinThorService {
     @org.springframework.beans.factory.annotation.Value("${frotapro.sync.ler-por-movimentacao:true}")
     private boolean lerPorMovimentacao = true;
 
+    /**
+     * Motorista e veículo GENÉRICOS de reentrega cadastrados no WinThor (motorista 10007 REENTREGA; veículos 278
+     * placa RRR123 e 2 placa ZZZ0000). Um carregamento com um deles é só um "estacionamento": a nota espera ser faturada de novo e vai para
+     * outro carregamento, com motorista e MDF-e de verdade. Não é viagem e não deve ser sincronizado como tal.
+     * Lista separada por vírgula; vazio desliga a regra.
+     */
+    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.reentrega.codigos-motorista:10007}")
+    private String codigosMotoristaReentrega = "10007";
+
+    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.reentrega.codigos-veiculo:278,2}")
+    private String codigosVeiculoReentrega = "278,2";
+
+    /** Códigos (só números) de uma lista "a,b,c"; o que não for número é ignorado, então dá para inlinar no SQL. */
+    static List<Integer> parseCodigos(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return List.of();
+        }
+        List<Integer> codigos = new ArrayList<>();
+        for (String parte : texto.split(",")) {
+            try {
+                codigos.add(Integer.parseInt(parte.trim()));
+            } catch (NumberFormatException ignorado) {
+                // ignora
+            }
+        }
+        return codigos;
+    }
+
+    private static String emLista(List<Integer> codigos) {
+        return codigos.stream().map(String::valueOf).collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Trecho de SQL (começa com AND) para as consultas que têm o carregamento como "c" (pccarreg): tira o
+     * carregamento cujo motorista OU veículo é o genérico de reentrega.
+     */
+    String filtroSemReentregaGenerica() {
+        List<Integer> motoristas = parseCodigos(codigosMotoristaReentrega);
+        List<Integer> veiculos = parseCodigos(codigosVeiculoReentrega);
+        StringBuilder sql = new StringBuilder();
+        if (!motoristas.isEmpty()) {
+            sql.append("                AND NVL(c.codmotorista, 0) NOT IN (").append(emLista(motoristas)).append(")\n");
+        }
+        if (!veiculos.isEmpty()) {
+            sql.append("                AND NVL(c.codveiculo, 0) NOT IN (").append(emLista(veiculos)).append(")\n");
+        }
+        return sql.toString();
+    }
+
+    /** "c.codmotorista IN (..) OR c.codveiculo IN (..)" para o alias dado, ou "" se a regra está desligada. */
+    private String condicaoReentregaGenerica(String alias) {
+        List<Integer> motoristas = parseCodigos(codigosMotoristaReentrega);
+        List<Integer> veiculos = parseCodigos(codigosVeiculoReentrega);
+        List<String> condicoes = new ArrayList<>();
+        if (!motoristas.isEmpty()) {
+            condicoes.add(alias + ".codmotorista IN (" + emLista(motoristas) + ")");
+        }
+        if (!veiculos.isEmpty()) {
+            condicoes.add(alias + ".codveiculo IN (" + emLista(veiculos) + ")");
+        }
+        return String.join(" OR ", condicoes);
+    }
+
+    /** Mesma regra, para a consulta de existência (que não junta o pccarreg): vira um NOT EXISTS. */
+    String filtroExistenciaSemReentregaGenerica() {
+        String condicao = condicaoReentregaGenerica("rc");
+        if (condicao.isEmpty()) {
+            return "";
+        }
+        return "                AND NOT EXISTS (SELECT 1 FROM pccarreg rc WHERE rc.numcar = n.numcar AND ("
+                + condicao + "))\n";
+    }
+
+    /**
+     * Dos códigos perguntados, quais estão num carregamento com motorista/veículo genérico de reentrega. Usado pela
+     * tela de conferência da API (cargas que o motorista já iniciou e que, no WinThor, são reentrega parada).
+     */
+    public List<Integer> filtrarReentregaGenerica(List<Integer> codigosCargas) {
+        List<Integer> codigos = normalizarCodigos(codigosCargas);
+        String condicao = condicaoReentregaGenerica("c");
+        if (codigos.isEmpty() || condicao.isEmpty()) {
+            return List.of();
+        }
+
+        List<Integer> resultado = new ArrayList<>();
+        for (List<Integer> lote : emLotes(codigos, TAMANHO_LOTE_CODIGOS)) {
+            StringBuilder sql = new StringBuilder("SELECT DISTINCT c.numcar AS numcar FROM pccarreg c WHERE (")
+                    .append(condicao).append(")");
+            List<Object> parametros = new ArrayList<>();
+            adicionarFiltroIn(sql, parametros, "c.numcar", lote);
+            resultado.addAll(jdbcTemplate.query(sql.toString(), parametros.toArray(), (rs, rowNum) -> rs.getInt("numcar")));
+        }
+        return resultado;
+    }
+
     public List<CargaWinThorDto> buscarCargasFaturadas(UUID empresaId,
                                                        LocalDate dataInicial,
                                                        LocalDate dataFinal,
@@ -194,6 +289,9 @@ public class CargaWinThorService {
             FROM pcnfsaid n
             WHERE n.codfilial = 1
             """);
+        // Carregamento genérico de reentrega não é viagem: para o FrotaPRO é como se não existisse (a carga
+        // sincronizada nele é marcada como "sumida" e, se ganhar motorista de verdade, volta sozinha).
+        sql.append(filtroExistenciaSemReentregaGenerica());
 
         List<Object> parametros = new ArrayList<>();
         adicionarFiltroIn(sql, parametros, "n.numcar", codigos);
@@ -295,6 +393,7 @@ public class CargaWinThorService {
                 AND n.codfilial    = 1
                 AND m.codfilial    = 1
             """);
+        sqlCargas.append(filtroSemReentregaGenerica());
 
         adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codveiculo", codigosCaminhoesFiltro);
         adicionarFiltroIn(sqlCargas, parametrosCargas, "m.codmotorista", codigosMotoristasFiltro);
@@ -370,6 +469,7 @@ public class CargaWinThorService {
                 AND n.codfilial    = 1
                 AND m.codfilial    = 1
             """);
+        sqlClientes.append(filtroSemReentregaGenerica());
 
         List<Object> parametrosClientes = new ArrayList<>();
         adicionarFiltroIn(sqlClientes, parametrosClientes, "n.numcar", codigosCargas);

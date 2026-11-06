@@ -1,5 +1,6 @@
 package br.com.frotasPro.integradora.winthor.controller;
 
+import br.com.frotasPro.integradora.winthor.dto.CargasReentregaGenericaResponse;
 import br.com.frotasPro.integradora.winthor.dto.VerificarExistenciaCargasRequest;
 import br.com.frotasPro.integradora.winthor.dto.VerificarExistenciaCargasResponse;
 import br.com.frotasPro.integradora.winthor.service.CargaWinThorService;
@@ -27,6 +28,14 @@ public class CargaExistenciaController {
         var existentes = cargaWinThorService.filtrarExistentes(request.getCodigosCargas());
         return VerificarExistenciaCargasResponse.builder()
                 .codigosExistentes(existentes)
+                .build();
+    }
+
+    /** Dos códigos perguntados, quais estão num carregamento genérico de reentrega (motorista/veículo "REENTREGA"). */
+    @PostMapping("/reentrega-generica")
+    public CargasReentregaGenericaResponse reentregaGenerica(@RequestBody VerificarExistenciaCargasRequest request) {
+        return CargasReentregaGenericaResponse.builder()
+                .codigosReentrega(cargaWinThorService.filtrarReentregaGenerica(request.getCodigosCargas()))
                 .build();
     }
 }

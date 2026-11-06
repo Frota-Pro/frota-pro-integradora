@@ -38,16 +38,20 @@ public class CargaWinThorService {
     private boolean lerPorMovimentacao = true;
 
     /**
-     * Motorista e veículo GENÉRICOS de reentrega cadastrados no WinThor (motorista 10007 REENTREGA; veículos 278
-     * placa RRR123 e 2 placa ZZZ0000). Um carregamento com um deles é só um "estacionamento": a nota espera ser faturada de novo e vai para
-     * outro carregamento, com motorista e MDF-e de verdade. Não é viagem e não deve ser sincronizado como tal.
-     * Lista separada por vírgula; vazio desliga a regra.
+     * Motorista GENÉRICO de reentrega cadastrado no WinThor (10007 REENTREGA). Um carregamento com ele é só um
+     * "estacionamento": a nota espera ser faturada de novo e vai para outro carregamento, com motorista e MDF-e de
+     * verdade. Não é viagem e não deve ser sincronizado como tal. Lista separada por vírgula; vazio desliga a regra.
+     *
+     * O veículo NÃO entra por padrão: ele não identifica a operação (o veículo 2 "VEÍCULO DO CLIENTE" serve tanto
+     * para retira, com o motorista 10 CLIENTE VEM BUSCAR, quanto para reentrega, e quem monta o carregamento pode
+     * trocá-lo). A retira fica fora desta regra de propósito. A lista de veículos continua disponível por
+     * configuração (frotapro.sync.reentrega.codigos-veiculo), vazia por padrão.
      */
     @org.springframework.beans.factory.annotation.Value("${frotapro.sync.reentrega.codigos-motorista:10007}")
     private String codigosMotoristaReentrega = "10007";
 
-    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.reentrega.codigos-veiculo:278,2}")
-    private String codigosVeiculoReentrega = "278,2";
+    @org.springframework.beans.factory.annotation.Value("${frotapro.sync.reentrega.codigos-veiculo:}")
+    private String codigosVeiculoReentrega = "";
 
     /** Códigos (só números) de uma lista "a,b,c"; o que não for número é ignorado, então dá para inlinar no SQL. */
     static List<Integer> parseCodigos(String texto) {

@@ -114,6 +114,33 @@ public class CargaWinThorService {
                 + condicao + "))\n";
     }
 
+    /** true se o código do motorista é um dos genéricos de reentrega ("estacionamento"). */
+    public boolean isMotoristaGenerico(Integer codigo) {
+        return codigo != null && parseCodigos(codigosMotoristaReentrega).contains(codigo);
+    }
+
+    /** true se o código do veículo está na lista de veículos genéricos (vazia por padrão). */
+    public boolean isVeiculoGenerico(Integer codigo) {
+        return codigo != null && parseCodigos(codigosVeiculoReentrega).contains(codigo);
+    }
+
+    /**
+     * Para cada carregamento, o MDF-e que a sincronização usa (a mesma escolha de buscarCargasFaturadas: o aprovado,
+     * e entre iguais o mais recente), com motorista e veículo DO MANIFESTO. Só leitura; sem clientes/notas.
+     * Usado pela conferência de motorista/caminhão da reentrega.
+     */
+    public Map<Integer, CargaWinThorDto> buscarMdfeVigentePorCarregamento(List<Integer> codigosCargas) {
+        Map<Integer, CargaWinThorDto> vigentes = new LinkedHashMap<>();
+        for (List<Integer> lote : emLotes(normalizarCodigos(codigosCargas), TAMANHO_LOTE_CODIGOS)) {
+            for (CargaWinThorDto carga : buscarCargasPorCodigos(lote, List.of(), List.of())) {
+                if (carga.getNumCar() != null) {
+                    vigentes.merge(carga.getNumCar(), carga, this::preferirMdfeVigente);
+                }
+            }
+        }
+        return vigentes;
+    }
+
     /**
      * Dos códigos perguntados, quais estão num carregamento com motorista/veículo genérico de reentrega. Usado pela
      * tela de conferência da API (cargas que o motorista já iniciou e que, no WinThor, são reentrega parada).
